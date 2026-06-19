@@ -954,7 +954,7 @@ function renderMovimientos() {
         <td>${t.description || '—'}</td>
         <td><span class="badge badge-gray">${t.category}</span></td>
         <td><span class="badge ${typeBadge[t.type]||'badge-gray'}">${typeLabel[t.type]||t.type}</span></td>
-        <td style="font-weight:500;color:${typeColor[t.type]||'var(--ts)'">${typeSign[t.type]||''}${fmt(t.amount, t.currency)}</td>
+        <td style="font-weight:500;color:${typeColor[t.type]||'var(--ts)'}">${typeSign[t.type]||''}${fmt(t.amount, t.currency)}</td>
         <td>
           <button onclick="editMovimiento('${t.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.8rem;margin-right:.3rem">✏️</button>
           <button onclick="deleteMovimiento('${t.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.8rem">✕</button>

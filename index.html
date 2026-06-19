@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -368,7 +369,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
       <button class="nav-item" onclick="nav('movimientos')"><i class="ti ti-arrows-exchange"></i> Movimientos</button>
       <button class="nav-item" onclick="nav('deudas')"><i class="ti ti-credit-card"></i> Deudas <span class="nav-badge" id="badge-deudas"></span></button>
       <button class="nav-item" onclick="nav('ahorros')"><i class="ti ti-piggy-bank"></i> Ahorros</button>
-      <button class="nav-item" onclick="nav('presupuestos')"><i class="ti ti-wallet"></i> Presupuestos</button>
+      <button class="nav-item" onclick="nav('presupuestos')"><i class="ti ti-wallet"></i> Gastos Mensuales</button>
       <button class="nav-item" onclick="nav('viajes')"><i class="ti ti-plane"></i> Viajes</button>
       <button class="nav-item" onclick="nav('recordatorios')"><i class="ti ti-bell"></i> Recordatorios <span class="nav-badge" id="badge-rem"></span></button>
       <button class="nav-item" onclick="nav('reportes')"><i class="ti ti-chart-pie"></i> Reportes</button>
@@ -440,7 +441,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 
     <!-- PRESUPUESTOS -->
     <div class="section" id="sec-presupuestos">
-      <div class="section-title">Presupuesto mensual</div>
+      <div class="section-title">Gastos Mensuales</div>
       <div id="presupuestos-list"></div>
     </div>
 
@@ -452,7 +453,13 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 
     <!-- RECORDATORIOS -->
     <div class="section" id="sec-recordatorios">
-      <div class="section-title">Recordatorios de pago</div>
+      <div class="section-title">
+        Recordatorios de pago
+        <button onclick="initGCal()" style="display:flex;align-items:center;gap:.4rem;padding:.4rem .9rem;background:#fff;border:1px solid #d4a96a;border-radius:var(--rs);font-size:.78rem;cursor:pointer;color:var(--tp);font-weight:500">
+          <svg width="14" height="14" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Sincronizar con Google Calendar
+        </button>
+      </div>
       <div id="recordatorios-list"></div>
     </div>
 
@@ -1055,7 +1062,10 @@ function renderDeudas() {
           ${d.isCredit ? `<div style="font-size:.78rem;color:var(--ts)">Cuota mensual: ${fmt(d.monthlyPayment || 0)}</div>` :
             `<div style="font-size:.78rem;color:var(--ts)">Corte día ${d.cutDay || '?'} · Pago día ${d.payDay || '?'}</div>`}
         </div>
-        <button onclick="editDeuda('${d.id}')" style="background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.3rem .6rem;font-size:.75rem;cursor:pointer;color:var(--ts)">Editar</button>
+        <div style="display:flex;flex-direction:column;gap:.4rem">
+          <button onclick="editDeuda('${d.id}')" style="background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.3rem .6rem;font-size:.75rem;cursor:pointer;color:var(--ts)">Editar</button>
+          <button onclick="abonarDeuda('${d.id}')" style="background:var(--green-bg);border:1px solid var(--green);border-radius:var(--rs);padding:.3rem .6rem;font-size:.75rem;cursor:pointer;color:var(--green);font-weight:500">💳 Abonar</button>
+        </div>
       </div>
       ${limit > 0 ? `<div class="progress" style="margin-top:.8rem"><div class="progress-fill" style="width:${pct}%;background:${barColor}"></div></div>
       <div style="font-size:.72rem;color:var(--ts);margin-top:.3rem">${pct.toFixed(0)}% del cupo (${fmt(limit)} total)</div>` : ''}
@@ -1166,6 +1176,46 @@ function deleteDeuda(id) {
   saveP(); closeModal(); renderDeudas();
 }
 
+function abonarDeuda(id) {
+  const p = getP();
+  const d = p.debts.find(x => x.id === id);
+  if (!d) return;
+  openModal(`💳 Abonar a ${d.name}`, `
+    <div class="form-group"><label>Monto del abono (${p.settings.expenseCurrency})</label>
+      <input type="number" id="ab-amount" placeholder="0" value="${d.monthlyPayment || ''}">
+    </div>
+    <div class="form-group" style="margin-top:.7rem"><label>Fecha</label>
+      <input type="date" id="ab-date" value="${new Date().toISOString().split('T')[0]}">
+    </div>
+    <div class="form-group" style="margin-top:.7rem"><label>Nota (opcional)</label>
+      <input type="text" id="ab-note" placeholder="ej: Pago mínimo junio">
+    </div>
+    <div style="background:var(--amber-bg);border-radius:var(--rs);padding:.6rem .8rem;margin-top:.8rem;font-size:.8rem;color:var(--amber)">
+      Este abono se registrará automáticamente en Movimientos y reducirá el saldo de ${d.name}.
+    </div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Registrar abono', cls: 'btn-primary', action: () => {
+      const amount = parseFloat(document.getElementById('ab-amount').value) || 0;
+      if (!amount || amount <= 0) return alert('Ingresa un monto válido');
+      const date = document.getElementById('ab-date').value;
+      const note = document.getElementById('ab-note').value.trim();
+      const prevBalance = d.balance || 0;
+      d.balance = Math.max(0, prevBalance - amount);
+      if (d.isCredit && d.totalDebt) d.totalDebt = Math.max(0, (d.totalDebt || 0) - amount);
+      p.transactions.push({
+        id: Date.now().toString(), type: 'expense',
+        amount, currency: p.settings.expenseCurrency,
+        category: d.name, date,
+        description: note || `Abono ${d.name}`
+      });
+      saveP(); closeModal(); renderDeudas();
+      if (d.balance <= 0) showBear('¡Deuda saldada!', `${d.name} está en cero 🎉`);
+      else showBear('¡Abono registrado!', `Saldo restante: ${fmt(d.balance)}`);
+    }}
+  ]);
+}
+
 // ===== AHORROS =====
 function renderAhorros() {
   const p = getP();
@@ -1269,56 +1319,107 @@ function deleteAhorro(id) {
   saveP(); closeModal(); renderAhorros();
 }
 
-// ===== PRESUPUESTOS =====
+// ===== GASTOS MENSUALES =====
 function renderPresupuestos() {
   const p = getP();
   const txs = thisMonthTxs().filter(t => t.type === 'expense');
   const spentByCat = {};
   txs.forEach(t => { spentByCat[t.category] = (spentByCat[t.category] || 0) + toExpenseCurrency(t.amount, t.currency); });
+  const monthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
 
   document.getElementById('presupuestos-list').innerHTML = `
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:.8rem">
       ${p.settings.expenseCategories.map(cat => {
-        const budget = p.settings.budgets?.find(b => b.cat === cat);
+        const budget = p.settings.budgets?.find(b => b.cat === cat) || {};
         const spent = spentByCat[cat] || 0;
-        const limit = budget?.limit || 0;
-        const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : 0;
+        const limit = budget.limit || 0;
+        const monthlyFixed = budget.monthlyFixed || 0;
+        const paid = budget.paidMonths?.includes(monthKey) || false;
+        const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : monthlyFixed > 0 ? Math.min(100, (spent / monthlyFixed) * 100) : 0;
         const color = pct > 90 ? 'var(--red)' : pct > 70 ? 'var(--amber)' : 'var(--green)';
-        return `<div class="card">
-          <div class="card-stripe"></div>
-          <div style="margin-top:.3rem;display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-            <div style="font-weight:500;font-size:.9rem;color:var(--tp)">${cat}</div>
-            <button onclick="editPresupuesto('${cat}')" style="background:none;border:none;font-size:.75rem;color:var(--ts);cursor:pointer">✏️</button>
+        return `<div class="card" style="${paid ? 'border-color:var(--green)' : ''}">
+          <div class="card-stripe" style="background:${paid ? 'var(--green)' : 'var(--check)'}"></div>
+          <div style="margin-top:.3rem">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+              <div style="font-weight:500;font-size:.9rem;color:var(--tp)">${cat}</div>
+              <button onclick="editGastoFijo('${cat}')" style="background:none;border:none;font-size:.75rem;color:var(--ts);cursor:pointer">✏️ Editar</button>
+            </div>
+            ${monthlyFixed > 0 ? `<div style="font-size:.82rem;color:var(--ts);margin-bottom:.3rem">Monto fijo: <strong style="color:var(--tp)">${fmt(monthlyFixed)}</strong></div>` : ''}
+            <div style="font-size:.85rem;color:var(--red);margin-bottom:.3rem">Gastado: ${fmt(spent)}</div>
+            ${pct > 0 ? `
+              <div class="progress"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
+              <div style="font-size:.72rem;color:var(--ts);margin-top:.3rem">${pct.toFixed(0)}% ${limit > 0 ? 'del límite' : 'del monto fijo'}</div>` : ''}
+            <div style="margin-top:.7rem">
+              ${paid
+                ? `<div style="color:var(--green);font-size:.82rem;font-weight:500">✓ Pagado este mes</div>`
+                : monthlyFixed > 0
+                  ? `<button onclick="marcarGastoFijoPagado('${cat}')" style="width:100%;padding:.45rem;background:var(--green-bg);color:var(--green);border:1px solid var(--green);border-radius:var(--rs);cursor:pointer;font-size:.82rem;font-weight:500">✓ Marcar como pagado</button>`
+                  : `<button onclick="editGastoFijo('${cat}')" style="width:100%;padding:.45rem;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);border-radius:var(--rs);cursor:pointer;font-size:.78rem">+ Definir monto fijo mensual</button>`
+              }
+            </div>
           </div>
-          <div style="font-size:.88rem;color:var(--red)">${fmt(spent)}</div>
-          ${limit > 0 ? `
-            <div class="progress" style="margin-top:.5rem"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
-            <div style="font-size:.72rem;color:var(--ts);margin-top:.3rem">${fmt(limit)} presupuestado · ${pct.toFixed(0)}%</div>
-          ` : `<div style="font-size:.72rem;color:var(--ts);margin-top:.3rem;cursor:pointer" onclick="editPresupuesto('${cat}')">Sin límite — <span style="color:var(--amber)">Establecer</span></div>`}
         </div>`;
       }).join('')}
     </div>`;
 }
 
-function openAddPresupuesto() { editPresupuesto(getP().settings.expenseCategories[0]); }
-function editPresupuesto(cat) {
+function openAddPresupuesto() { editGastoFijo(getP().settings.expenseCategories[0]); }
+
+function editGastoFijo(cat) {
   const p = getP();
-  const budget = p.settings.budgets?.find(b => b.cat === cat);
-  openModal(`Presupuesto: ${cat}`, `
-    <div class="form-group"><label>Límite mensual (${p.settings.expenseCurrency})</label>
-      <input type="number" id="bp-limit" placeholder="0" value="${budget?.limit || ''}">
+  if (!p.settings.budgets) p.settings.budgets = [];
+  const budget = p.settings.budgets.find(b => b.cat === cat) || {};
+  openModal(`Editar: ${cat}`, `
+    <div class="form-group"><label>Nombre de la categoría</label>
+      <input type="text" id="gf-name" value="${cat}">
+    </div>
+    <div class="form-group" style="margin-top:.7rem"><label>Monto fijo mensual (${p.settings.expenseCurrency})</label>
+      <input type="number" id="gf-fixed" placeholder="0" value="${budget.monthlyFixed || ''}">
+    </div>
+    <div class="form-group" style="margin-top:.7rem"><label>Límite de alerta (opcional)</label>
+      <input type="number" id="gf-limit" placeholder="0" value="${budget.limit || ''}">
+      <div style="font-size:.75rem;color:var(--ts);margin-top:.3rem">La barra se pone roja cuando superas este límite</div>
     </div>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Guardar', cls: 'btn-primary', action: () => {
-      if (!p.settings.budgets) p.settings.budgets = [];
-      const idx = p.settings.budgets.findIndex(b => b.cat === cat);
-      const limit = parseFloat(document.getElementById('bp-limit').value) || 0;
-      if (idx >= 0) p.settings.budgets[idx].limit = limit;
-      else p.settings.budgets.push({ cat, limit });
+      const newName = document.getElementById('gf-name').value.trim() || cat;
+      const fixed = parseFloat(document.getElementById('gf-fixed').value) || 0;
+      const limit = parseFloat(document.getElementById('gf-limit').value) || 0;
+      // Rename category everywhere if changed
+      if (newName !== cat) {
+        const idx = p.settings.expenseCategories.indexOf(cat);
+        if (idx >= 0) p.settings.expenseCategories[idx] = newName;
+        p.transactions.forEach(t => { if (t.category === cat) t.category = newName; });
+        const bidx = p.settings.budgets.findIndex(b => b.cat === cat);
+        if (bidx >= 0) p.settings.budgets[bidx].cat = newName;
+      }
+      const finalCat = newName;
+      const bidx = p.settings.budgets.findIndex(b => b.cat === finalCat);
+      if (bidx >= 0) { p.settings.budgets[bidx].monthlyFixed = fixed; p.settings.budgets[bidx].limit = limit; }
+      else p.settings.budgets.push({ cat: finalCat, monthlyFixed: fixed, limit, paidMonths: [] });
       saveP(); closeModal(); renderPresupuestos();
     }}
   ]);
+}
+
+function marcarGastoFijoPagado(cat) {
+  const p = getP();
+  if (!p.settings.budgets) return;
+  const budget = p.settings.budgets.find(b => b.cat === cat);
+  const amount = budget?.monthlyFixed || 0;
+  if (!amount) return alert('Primero define el monto fijo mensual para ' + cat);
+  const monthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
+  if (!budget.paidMonths) budget.paidMonths = [];
+  budget.paidMonths.push(monthKey);
+  p.transactions.push({
+    id: Date.now().toString(), type: 'expense',
+    amount, currency: p.settings.expenseCurrency,
+    category: cat, date: new Date().toISOString().split('T')[0],
+    description: `Gasto fijo: ${cat}`
+  });
+  saveP(); renderPresupuestos();
+  showBear('¡Pago registrado!', `${cat} marcado como pagado ✓`);
 }
 
 // ===== VIAJES =====
@@ -1729,6 +1830,57 @@ function spawnConfetti() {
     el.style.cssText = `left:${Math.random()*100}%;top:-10px;background:${colors[Math.floor(Math.random()*colors.length)]};transform:rotate(${Math.random()*360}deg);animation-duration:${1.5+Math.random()*2}s;animation-delay:${Math.random()*0.8}s;width:${6+Math.random()*8}px;height:${6+Math.random()*8}px;border-radius:${Math.random()>0.5?'50%':'2px'}`;
     wrap.appendChild(el);
   }
+}
+
+// ===== GOOGLE CALENDAR =====
+const GCAL_CLIENT_ID = '1037094429116-qrnh7o3pqur6oi5cichgksdjvu3roq8c.apps.googleusercontent.com';
+const GCAL_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+let gcalTokenClient = null;
+let gcalToken = null;
+
+function initGCal() {
+  if (!window.google) { alert('Google no cargó. Revisa tu conexión.'); return; }
+  gcalTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GCAL_CLIENT_ID,
+    scope: GCAL_SCOPE,
+    callback: async (resp) => {
+      if (resp.error) { alert('Error al conectar con Google: ' + resp.error); return; }
+      gcalToken = resp.access_token;
+      await pushRemindersToGCal();
+    }
+  });
+  gcalTokenClient.requestAccessToken();
+}
+
+async function pushRemindersToGCal() {
+  const p = getP();
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  let ok = 0, fail = 0;
+  for (const r of p.reminders) {
+    const day = String(r.dayOfMonth).padStart(2, '0');
+    const dateStr = `${year}-${month}-${day}`;
+    const body = {
+      summary: `💸 ${r.name}`,
+      description: r.amount > 0 ? `Pago: ${fmt(r.amount, r.currency)}` : 'Recordatorio de pago — La Canasta',
+      start: { date: dateStr },
+      end: { date: dateStr },
+      recurrence: [`RRULE:FREQ=MONTHLY;BYMONTHDAY=${r.dayOfMonth}`],
+      colorId: '11',
+      reminders: { useDefault: false, overrides: [{ method: 'popup', minutes: 1440 }, { method: 'popup', minutes: 60 }] }
+    };
+    try {
+      const res = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${gcalToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (res.ok) ok++; else fail++;
+    } catch { fail++; }
+  }
+  if (ok > 0) showBear(`¡${ok} recordatorios en Google Calendar!`, 'Ukuku los agregó todos 📅');
+  else alert('No se pudieron crear los eventos. Intenta de nuevo.');
 }
 
 // ===== RESET PAID REMINDERS MONTHLY =====

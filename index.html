@@ -6,6 +6,7 @@
 <title>La Canasta 🧺</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -180,6 +181,18 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 /* SCROLLBAR */
 ::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--bl);border-radius:99px}
 
+/* ===== AUTH PAGE ===== */
+#pg-auth{flex-direction:column;align-items:center;justify-content:center;padding:2rem;gap:1.2rem;background:var(--bg)}
+.auth-box{background:var(--bg-card);border:1px solid var(--bl);border-radius:var(--r);padding:1.8rem;width:100%;max-width:380px}
+.auth-logo{text-align:center;margin-bottom:1.2rem}
+.auth-logo div{font-size:2.5rem}
+.auth-logo h2{font-size:1.1rem;font-weight:500;color:var(--sidebar);margin-top:.4rem}
+.auth-tabs{display:flex;background:var(--bl);border-radius:var(--rs);padding:.2rem;gap:.2rem;margin-bottom:1.2rem}
+.auth-tab{flex:1;padding:.4rem;border-radius:4px;font-size:.85rem;cursor:pointer;border:none;background:transparent;color:var(--ts);transition:.15s;text-align:center}
+.auth-tab.active{background:var(--bg-card);color:var(--tp);font-weight:500}
+.auth-error{color:var(--red);font-size:.8rem;text-align:center;min-height:1rem;margin-top:.2rem}
+.auth-success{color:var(--green);font-size:.8rem;text-align:center;min-height:1rem;margin-top:.2rem}
+
 /* ===== MOBILE RESPONSIVE ===== */
 .hamburger{display:none;position:fixed;top:.8rem;left:.8rem;z-index:90;background:var(--sidebar);border:none;border-radius:var(--rs);padding:.5rem .65rem;cursor:pointer;color:#f5deb3;font-size:1.2rem;box-shadow:0 2px 8px rgba(0,0,0,.25)}
 .sidebar-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:88}
@@ -215,8 +228,40 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 </head>
 <body>
 
+<!-- ===== AUTH PAGE ===== -->
+<div class="page active" id="pg-auth">
+  <div class="check-stripe" style="position:fixed;top:0;left:0;right:0"></div>
+  <div class="auth-box">
+    <div class="auth-logo">
+      <div>🧺</div>
+      <h2>La Canasta</h2>
+      <p style="font-size:.8rem;color:var(--ts);margin-top:.2rem">Tu jardín financiero</p>
+    </div>
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchAuthTab('login',this)">Entrar</button>
+      <button class="auth-tab" onclick="switchAuthTab('signup',this)">Crear cuenta</button>
+    </div>
+    <div id="auth-login-form">
+      <div class="form-group"><label>Correo</label><input type="email" id="auth-email" placeholder="tucorreo@email.com" autocomplete="email"></div>
+      <div class="form-group" style="margin-top:.7rem"><label>Contraseña</label><input type="password" id="auth-password" placeholder="••••••••" autocomplete="current-password"></div>
+      <div class="auth-error" id="auth-error"></div>
+      <button class="btn btn-primary" onclick="authLogin()" style="width:100%;margin-top:.8rem">Entrar</button>
+      <div style="text-align:center;margin-top:.8rem"><button onclick="authForgot()" style="background:none;border:none;color:var(--ts);font-size:.78rem;cursor:pointer;text-decoration:underline">¿Olvidaste tu contraseña?</button></div>
+    </div>
+    <div id="auth-signup-form" style="display:none">
+      <div class="form-group"><label>Nombre</label><input type="text" id="su-name" placeholder="ej: Xaela" maxlength="20"></div>
+      <div class="form-group" style="margin-top:.7rem"><label>Correo</label><input type="email" id="su-email" placeholder="tucorreo@email.com"></div>
+      <div class="form-group" style="margin-top:.7rem"><label>Contraseña</label><input type="password" id="su-password" placeholder="Mínimo 6 caracteres"></div>
+      <div class="auth-error" id="su-error"></div>
+      <div class="auth-success" id="su-success"></div>
+      <button class="btn btn-primary" onclick="authSignup()" style="width:100%;margin-top:.8rem">Crear cuenta</button>
+    </div>
+  </div>
+  <div class="check-stripe" style="position:fixed;bottom:0;left:0;right:0"></div>
+</div>
+
 <!-- ===== PROFILE SELECTOR ===== -->
-<div class="page active" id="pg-profiles">
+<div class="page" id="pg-profiles">
   <div class="check-stripe" style="position:fixed;top:0;left:0;right:0"></div>
   <div class="profiles-header">
     <div style="font-size:3rem">🧺</div>
@@ -253,7 +298,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
     <button class="pin-key" onclick="pinPress('0')">0</button>
     <button class="pin-key del" onclick="pinDel()">⌫</button>
   </div>
-  <button class="pin-back" onclick="showPage('pg-profiles')">← Volver</button>
+  <button class="pin-back" onclick="showPage('pg-auth')">← Volver</button>
 </div>
 
 <!-- ===== CREATE PROFILE ===== -->
@@ -333,6 +378,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
       <div class="sb-flowers">🌸🌼🌺</div>
       <div class="sb-date" id="sb-date"></div>
       <div class="sb-rate" id="sb-rate" onclick="openRateModal()">💱 Actualizar tasa</div>
+      <button onclick="authLogout()" style="margin-top:.6rem;background:none;border:none;color:#a07850;font-size:.75rem;cursor:pointer;width:100%">← Cerrar sesión</button>
     </div>
   </nav>
 
@@ -489,6 +535,11 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 </div>
 
 <script>
+// ===== SUPABASE =====
+const SUPA_URL = 'https://hsnjcepmyedflqamyikx.supabase.co';
+const SUPA_KEY = 'sb_publishable_0Bk2KprRxdl4TntIuyH7tw_HeyWJEbY';
+const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
+
 // ===== DATA LAYER =====
 const STORE_KEY = 'lacanasta_v1';
 let profiles = [];
@@ -508,10 +559,22 @@ function loadAll() {
   try { profiles = JSON.parse(localStorage.getItem(STORE_KEY)) || []; } catch(e) { profiles = []; }
 }
 function getP() { return currentProfile; }
-function saveP() {
+async function saveP() {
   const i = profiles.findIndex(p => p.id === currentProfile.id);
   if (i >= 0) profiles[i] = currentProfile;
   saveAll();
+  try {
+    const { data: { user } } = await sb.auth.getUser();
+    if (user) await sb.from('profiles').upsert({ user_id: user.id, data: currentProfile }, { onConflict: 'user_id' });
+  } catch(e) { console.warn('Sync error:', e); }
+}
+async function loadFromSupabase() {
+  try {
+    const { data: { user } } = await sb.auth.getUser();
+    if (!user) return null;
+    const { data } = await sb.from('profiles').select('data').eq('user_id', user.id).single();
+    return data?.data || null;
+  } catch(e) { return null; }
 }
 
 function defaultProfile(name, emoji, incomeCurrency, expenseCurrency, rate, pin) {
@@ -1681,6 +1744,97 @@ function checkMonthReset() {
   }
 }
 
+// ===== AUTH FUNCTIONS =====
+function switchAuthTab(tab, btn) {
+  document.querySelectorAll('.auth-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('auth-login-form').style.display = tab === 'login' ? 'block' : 'none';
+  document.getElementById('auth-signup-form').style.display = tab === 'signup' ? 'block' : 'none';
+  document.getElementById('auth-error').textContent = '';
+}
+
+async function authLogin() {
+  const email = document.getElementById('auth-email').value.trim();
+  const password = document.getElementById('auth-password').value;
+  const errEl = document.getElementById('auth-error');
+  errEl.textContent = '';
+  if (!email || !password) { errEl.textContent = 'Completa todos los campos'; return; }
+  errEl.textContent = 'Entrando...';
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if (error) { errEl.textContent = 'Correo o contraseña incorrectos'; return; }
+  await afterLogin();
+}
+
+async function authSignup() {
+  const name = document.getElementById('su-name').value.trim();
+  const email = document.getElementById('su-email').value.trim();
+  const password = document.getElementById('su-password').value;
+  const errEl = document.getElementById('su-error');
+  const okEl = document.getElementById('su-success');
+  errEl.textContent = ''; okEl.textContent = '';
+  if (!name || !email || !password) { errEl.textContent = 'Completa todos los campos'; return; }
+  if (password.length < 6) { errEl.textContent = 'La contraseña debe tener al menos 6 caracteres'; return; }
+  errEl.textContent = 'Creando cuenta...';
+  const { data, error } = await sb.auth.signUp({ email, password });
+  if (error) { errEl.textContent = error.message; return; }
+  errEl.textContent = '';
+  // Create profile immediately
+  const p = defaultProfile(name, '🌸', 'USD', 'COP', 4150, '');
+  currentProfile = p;
+  profiles = [p];
+  saveAll();
+  try {
+    await sb.from('profiles').upsert({ user_id: data.user.id, data: p }, { onConflict: 'user_id' });
+  } catch(e) {}
+  okEl.textContent = '¡Cuenta creada! Revisa tu correo para confirmar (o entra directamente).';
+  setTimeout(() => showPage('pg-app'), 1500);
+}
+
+async function authForgot() {
+  const email = document.getElementById('auth-email').value.trim();
+  if (!email) { document.getElementById('auth-error').textContent = 'Escribe tu correo primero'; return; }
+  await sb.auth.resetPasswordForEmail(email);
+  document.getElementById('auth-error').textContent = '';
+  alert('Te enviamos un correo para restablecer tu contraseña 📧');
+}
+
+async function authLogout() {
+  await sb.auth.signOut();
+  currentProfile = null; profiles = [];
+  showPage('pg-auth');
+}
+
+async function afterLogin() {
+  const remote = await loadFromSupabase();
+  if (remote) {
+    currentProfile = remote;
+    profiles = [remote];
+    saveAll();
+  } else {
+    loadAll();
+    if (profiles.length > 0) {
+      currentProfile = profiles[0];
+      // migrate local data to Supabase
+      const { data: { user } } = await sb.auth.getUser();
+      if (user) await sb.from('profiles').upsert({ user_id: user.id, data: currentProfile }, { onConflict: 'user_id' });
+    } else {
+      currentProfile = defaultProfile('Mi perfil', '🌸', 'USD', 'COP', 4150, '');
+      profiles = [currentProfile];
+      saveAll();
+    }
+  }
+  if (currentProfile.pin) {
+    pendingProfileId = currentProfile.id;
+    document.getElementById('pin-avatar').textContent = currentProfile.emoji;
+    document.getElementById('pin-name').textContent = currentProfile.name;
+    pinBuffer = ''; updatePinDots();
+    document.getElementById('pin-error').textContent = '';
+    showPage('pg-pin');
+  } else {
+    showPage('pg-app');
+  }
+}
+
 // ===== SIDEBAR MOBILE =====
 function toggleSidebar() {
   document.getElementById('main-sidebar').classList.toggle('open');
@@ -1692,14 +1846,14 @@ function closeSidebar() {
 }
 
 // ===== INIT =====
-loadAll();
-renderProfileSelector();
-
-// If only one profile with no PIN, auto-login
-if (profiles.length === 1 && !profiles[0].pin) {
-  currentProfile = profiles[0];
-  showPage('pg-app');
-}
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (session) {
+    await afterLogin();
+  } else {
+    showPage('pg-auth');
+  }
+})();
 </script>
 </body>
 </html>

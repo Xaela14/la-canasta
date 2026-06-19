@@ -823,10 +823,11 @@ function renderDashboard() {
 
   const totalIncomeIncome = txs.filter(t => t.type === 'income').reduce((s, t) => s + toExpenseCurrency(t.amount, t.currency), 0);
   const totalExpense = txs.filter(t => t.type === 'expense').reduce((s, t) => s + toExpenseCurrency(t.amount, t.currency), 0);
+  const totalAhorros = txs.filter(t => t.type === 'ahorro').reduce((s, t) => s + toExpenseCurrency(t.amount, t.currency), 0);
   const totalSavingsCOP = p.savings.reduce((s, sv) => s + (sv.currentCOP || 0), 0);
   const totalDebt = p.debts.reduce((s, d) => s + (d.balance || d.totalDebt || 0), 0);
   const netWorth = totalSavingsCOP - totalDebt;
-  const available = totalIncomeIncome - totalExpense;
+  const available = totalIncomeIncome - totalExpense - totalAhorros;
 
   const greeting = (() => {
     const h = new Date().getHours();
@@ -853,8 +854,13 @@ function renderDashboard() {
       <div class="stat-sub">${(totalIncomeIncome > 0 ? (totalExpense / totalIncomeIncome * 100).toFixed(1) : 0)}% del ingreso</div>
     </div>
     <div class="stat-card"><div class="card-stripe"></div>
-      <div class="stat-label">Disponible</div>
-      <div class="stat-val ${available >= 0 ? 'purple' : 'red'}">${fmt(available, ec)}</div>
+      <div class="stat-label">Ahorros del mes</div>
+      <div class="stat-val purple">${fmt(totalAhorros, ec)}</div>
+      <div class="stat-sub">${fmt(totalAhorros / r, ic)}</div>
+    </div>
+    <div class="stat-card" style="grid-column:1/-1;background:${available >= 0 ? 'var(--green-bg)' : 'var(--red-bg)'}"><div class="card-stripe" style="background:${available >= 0 ? 'var(--green)' : 'var(--red)'}"></div>
+      <div class="stat-label">Disponible real (ingresos − gastos − ahorros)</div>
+      <div class="stat-val ${available >= 0 ? 'green' : 'red'}" style="font-size:1.6rem">${fmt(available, ec)}</div>
       <div class="stat-sub">${fmt(available / r, ic)}</div>
     </div>
   `;
@@ -906,7 +912,7 @@ function renderDashboard() {
           <td style="color:var(--ts)">${dateStr(t.date)}</td>
           <td>${t.description || t.category}</td>
           <td><span class="badge badge-gray">${t.category}</span></td>
-          <td style="font-weight:500;color:${t.type === 'income' ? 'var(--green)' : 'var(--red)'}">${t.type === 'income' ? '+' : '−'}${fmt(t.amount, t.currency)}</td>
+          <td style="font-weight:500;color:${t.type === 'income' ? 'var(--green)' : t.type === 'ahorro' ? 'var(--purple)' : 'var(--red)'}">${t.type === 'income' ? '+' : t.type === 'ahorro' ? '→' : '−'}${fmt(t.amount, t.currency)}</td>
         </tr>`).join('')}</tbody></table>`}
     </div>`;
 }
@@ -920,26 +926,86 @@ function renderMovimientos() {
   // Populate category filter
   const catSel = document.getElementById('mv-filter-cat');
   if (catSel && catSel.options.length === 1) {
-    [...p.settings.incomeCategories, ...p.settings.expenseCategories].forEach(c => {
+    [...p.settings.incomeCategories, ...p.settings.expenseCategories, ...p.savings.map(s=>s.name)].forEach(c => {
       const o = document.createElement('option'); o.value = c; o.textContent = c; catSel.appendChild(o);
     });
+  }
+
+  // Update type filter to include ahorro
+  const typeSel = document.getElementById('mv-filter-type');
+  if (typeSel && typeSel.options.length === 3) {
+    const o = document.createElement('option'); o.value = 'ahorro'; o.textContent = 'Ahorros'; typeSel.appendChild(o);
   }
 
   let txs = [...p.transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
   if (filterCat) txs = txs.filter(t => t.category === filterCat);
   if (filterType) txs = txs.filter(t => t.type === filterType);
 
+  const typeBadge = { income: 'badge-green', expense: 'badge-red', ahorro: 'badge-purple' };
+  const typeLabel = { income: 'Ingreso', expense: 'Gasto', ahorro: 'Ahorro' };
+  const typeColor = { income: 'var(--green)', expense: 'var(--red)', ahorro: 'var(--purple)' };
+  const typeSign  = { income: '+', expense: '−', ahorro: '→' };
+
   document.getElementById('mv-body').innerHTML = txs.length === 0
-    ? '<tr><td colspan="6" style="text-align:center;color:var(--ts);padding:2rem">Sin movimientos. Presiona + para agregar.</td></tr>'
+    ? '<tr><td colspan="7" style="text-align:center;color:var(--ts);padding:2rem">Sin movimientos. Presiona + para agregar.</td></tr>'
     : txs.map(t => `
       <tr>
         <td style="color:var(--ts)">${dateStr(t.date)}</td>
         <td>${t.description || '—'}</td>
         <td><span class="badge badge-gray">${t.category}</span></td>
-        <td><span class="badge ${t.type === 'income' ? 'badge-green' : 'badge-red'}">${t.type === 'income' ? 'Ingreso' : 'Gasto'}</span></td>
-        <td style="font-weight:500;color:${t.type === 'income' ? 'var(--green)' : 'var(--red)'}">${t.type === 'income' ? '+' : '−'}${fmt(t.amount, t.currency)}</td>
-        <td><button onclick="deleteMovimiento('${t.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.8rem">✕</button></td>
+        <td><span class="badge ${typeBadge[t.type]||'badge-gray'}">${typeLabel[t.type]||t.type}</span></td>
+        <td style="font-weight:500;color:${typeColor[t.type]||'var(--ts)'">${typeSign[t.type]||''}${fmt(t.amount, t.currency)}</td>
+        <td>
+          <button onclick="editMovimiento('${t.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.8rem;margin-right:.3rem">✏️</button>
+          <button onclick="deleteMovimiento('${t.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.8rem">✕</button>
+        </td>
       </tr>`).join('');
+}
+
+function editMovimiento(id) {
+  const p = getP();
+  const t = p.transactions.find(x => x.id === id);
+  if (!t) return;
+  openModal('Editar movimiento', `
+    <div class="form-row">
+      <div class="form-group"><label>Fecha</label>
+        <input type="date" id="em-date" value="${t.date}">
+      </div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="em-type" disabled style="opacity:.6">
+          <option value="${t.type}">${t.type === 'income' ? 'Ingreso' : t.type === 'expense' ? 'Gasto' : 'Ahorro'}</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Descripción</label>
+      <input type="text" id="em-desc" value="${t.description || ''}">
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Monto</label>
+        <input type="number" id="em-amount" value="${t.amount}">
+      </div>
+      <div class="form-group"><label>Moneda</label>
+        <select id="em-currency">
+          <option value="${p.settings.expenseCurrency}" ${t.currency === p.settings.expenseCurrency ? 'selected' : ''}>${p.settings.expenseCurrency}</option>
+          <option value="${p.settings.incomeCurrency}" ${t.currency === p.settings.incomeCurrency ? 'selected' : ''}>${p.settings.incomeCurrency}</option>
+          <option value="EUR" ${t.currency === 'EUR' ? 'selected' : ''}>EUR</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Categoría</label>
+      <input type="text" id="em-cat" value="${t.category}">
+    </div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Guardar', cls: 'btn-primary', action: () => {
+      t.date = document.getElementById('em-date').value || t.date;
+      t.description = document.getElementById('em-desc').value;
+      t.amount = parseFloat(document.getElementById('em-amount').value) || t.amount;
+      t.currency = document.getElementById('em-currency').value;
+      t.category = document.getElementById('em-cat').value.trim() || t.category;
+      saveP(); closeModal(); renderMovimientos();
+    }}
+  ]);
 }
 
 function openAddMovimiento() {
@@ -950,14 +1016,18 @@ function openAddMovimiento() {
         <select id="mv-type" onchange="updateMvCategories()">
           <option value="expense">Gasto</option>
           <option value="income">Ingreso</option>
+          <option value="ahorro">Ahorro</option>
         </select>
       </div>
       <div class="form-group"><label>Fecha</label>
         <input type="date" id="mv-date" value="${new Date().toISOString().split('T')[0]}">
       </div>
     </div>
-    <div class="form-group"><label>Categoría</label>
+    <div class="form-group" id="mv-cat-box"><label>Categoría</label>
       <select id="mv-cat">${p.settings.expenseCategories.map(c => `<option>${c}</option>`).join('')}</select>
+    </div>
+    <div class="form-group" id="mv-saving-box" style="display:none"><label>Meta de ahorro</label>
+      <select id="mv-saving-id">${p.savings.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}</select>
     </div>
     <div class="form-row">
       <div class="form-group"><label>Monto</label>
@@ -967,6 +1037,7 @@ function openAddMovimiento() {
         <select id="mv-currency">
           <option value="${p.settings.expenseCurrency}">${p.settings.expenseCurrency}</option>
           <option value="${p.settings.incomeCurrency}">${p.settings.incomeCurrency}</option>
+          <option value="EUR">EUR</option>
         </select>
       </div>
     </div>
@@ -996,9 +1067,21 @@ function openAddMovimiento() {
 function updateMvCategories() {
   const p = getP();
   const type = document.getElementById('mv-type').value;
-  const cats = type === 'income' ? p.settings.incomeCategories : p.settings.expenseCategories;
-  document.getElementById('mv-cat').innerHTML = cats.map(c => `<option>${c}</option>`).join('');
-  document.getElementById('mv-installment-box').style.display = type === 'expense' ? 'block' : 'none';
+  const isAhorro = type === 'ahorro';
+  const isExpense = type === 'expense';
+  // Toggle category vs saving dropdown
+  document.getElementById('mv-cat-box').style.display = isAhorro ? 'none' : 'block';
+  document.getElementById('mv-saving-box').style.display = isAhorro ? 'block' : 'none';
+  document.getElementById('mv-installment-box').style.display = isExpense ? 'block' : 'none';
+  // Set currency default
+  const cur = document.getElementById('mv-currency');
+  if (isAhorro) cur.value = p.settings.incomeCurrency;
+  else if (isExpense) cur.value = p.settings.expenseCurrency;
+  // Update categories
+  if (!isAhorro) {
+    const cats = type === 'income' ? p.settings.incomeCategories : p.settings.expenseCategories;
+    document.getElementById('mv-cat').innerHTML = cats.map(c => `<option>${c}</option>`).join('');
+  }
 }
 function toggleInstallment() {
   const show = document.getElementById('mv-is-installment').checked;
@@ -1010,11 +1093,31 @@ function saveMovimiento() {
   const type = document.getElementById('mv-type').value;
   const amount = parseFloat(document.getElementById('mv-amount').value);
   const currency = document.getElementById('mv-currency').value;
-  const category = document.getElementById('mv-cat').value;
   const date = document.getElementById('mv-date').value;
   const description = document.getElementById('mv-desc').value;
   const isInstallment = document.getElementById('mv-is-installment')?.checked;
   if (!amount || amount <= 0) return alert('Ingresa un monto válido');
+
+  // Handle ahorro type
+  if (type === 'ahorro') {
+    const savingId = document.getElementById('mv-saving-id').value;
+    const saving = p.savings.find(s => s.id === savingId);
+    if (!saving) return alert('Selecciona una meta de ahorro');
+    const amountCOP = toExpenseCurrency(amount, currency);
+    const prev = saving.currentCOP;
+    saving.currentCOP = (saving.currentCOP || 0) + amountCOP;
+    p.transactions.push({
+      id: Date.now().toString(), type: 'ahorro',
+      amount, currency, category: saving.name,
+      savingId, date, description: description || `Aporte ${saving.name}`
+    });
+    saveP(); closeModal(); renderMovimientos();
+    const goalCOP = saving.goalUSD * p.settings.exchangeRate;
+    if (prev < goalCOP && saving.currentCOP >= goalCOP) showBear('¡Meta alcanzada!', `${saving.name} completada 🎉`);
+    return;
+  }
+
+  const category = document.getElementById('mv-cat').value;
 
   if (isInstallment && type === 'expense') {
     const cuotas = parseInt(document.getElementById('mv-cuotas').value) || 12;

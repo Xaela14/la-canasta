@@ -371,6 +371,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
       <button class="nav-item" onclick="nav('ahorros')"><i class="ti ti-piggy-bank"></i> Ahorros</button>
       <button class="nav-item" onclick="nav('presupuestos')"><i class="ti ti-wallet"></i> Gastos Mensuales</button>
       <button class="nav-item" onclick="nav('viajes')"><i class="ti ti-plane"></i> Viajes</button>
+      <button class="nav-item" onclick="nav('inversiones')"><i class="ti ti-trending-up"></i> Inversiones</button>
       <button class="nav-item" onclick="nav('recordatorios')"><i class="ti ti-bell"></i> Recordatorios <span class="nav-badge" id="badge-rem"></span></button>
       <button class="nav-item" onclick="nav('reportes')"><i class="ti ti-chart-pie"></i> Reportes</button>
       <button class="nav-item" onclick="nav('ajustes')"><i class="ti ti-settings"></i> Ajustes</button>
@@ -449,6 +450,12 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
     <div class="section" id="sec-viajes">
       <div class="section-title">Presupuestos de viaje</div>
       <div id="viajes-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem"></div>
+    </div>
+
+    <!-- INVERSIONES -->
+    <div class="section" id="sec-inversiones">
+      <div class="section-title">Inversiones</div>
+      <div id="inversiones-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem"></div>
     </div>
 
     <!-- RECORDATORIOS -->
@@ -604,6 +611,7 @@ function defaultProfile(name, emoji, incomeCurrency, expenseCurrency, rate, pin)
     savings: [],
     reminders: [],
     travelBudgets: [],
+    investments: [],
     paidRemindersThisMonth: []
   };
 }
@@ -723,10 +731,10 @@ function nav(section) {
   const sec = document.getElementById('sec-' + section);
   if (sec) sec.classList.add('active');
   // Show/hide FAB
-  const fabSections = ['movimientos', 'deudas', 'ahorros', 'presupuestos', 'viajes', 'recordatorios'];
+  const fabSections = ['movimientos', 'deudas', 'ahorros', 'presupuestos', 'viajes', 'inversiones', 'recordatorios'];
   document.getElementById('fab-btn').style.display = fabSections.includes(section) ? 'flex' : 'none';
   // Render
-  const renders = { dashboard: renderDashboard, movimientos: renderMovimientos, deudas: renderDeudas, ahorros: renderAhorros, presupuestos: renderPresupuestos, viajes: renderViajes, recordatorios: renderRecordatorios, reportes: renderReportes, ajustes: renderAjustes };
+  const renders = { dashboard: renderDashboard, movimientos: renderMovimientos, deudas: renderDeudas, ahorros: renderAhorros, presupuestos: renderPresupuestos, viajes: renderViajes, inversiones: renderInversiones, recordatorios: renderRecordatorios, reportes: renderReportes, ajustes: renderAjustes };
   if (renders[section]) renders[section]();
   updateBadges();
 }
@@ -734,7 +742,7 @@ function nav(section) {
 function openFab() {
   const active = document.querySelector('.nav-item.active')?.getAttribute('onclick') || '';
   const sec = active.match(/'(\w+)'/)?.[1];
-  const actions = { movimientos: openAddMovimiento, deudas: openAddDeuda, ahorros: openAddAhorro, presupuestos: openAddPresupuesto, viajes: openAddViaje, recordatorios: openAddRecordatorio };
+  const actions = { movimientos: openAddMovimiento, deudas: openAddDeuda, ahorros: openAddAhorro, presupuestos: openAddPresupuesto, viajes: openAddViaje, inversiones: openAddInversion, recordatorios: openAddRecordatorio };
   if (actions[sec]) actions[sec]();
 }
 
@@ -860,7 +868,7 @@ function renderDashboard() {
         const color = pct >= 100 ? '#2d7a3a' : pct >= 50 ? '#b7720a' : '#7b5ea7';
         return `<div style="margin-bottom:.9rem">
           <div style="display:flex;justify-content:space-between;font-size:.82rem;color:var(--ts);margin-bottom:.3rem">
-            <span>${s.name}</span><span style="color:${color};font-weight:500">${fmt(s.currentCOP, ec)} / ${fmtUSD(s.goalUSD)}</span>
+            <span>${s.emoji || '🐷'} ${s.name}</span><span style="color:${color};font-weight:500">${fmt(s.currentCOP, ec)} / ${fmtUSD(s.goalUSD)}</span>
           </div>
           <div class="progress"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
         </div>`;
@@ -1390,7 +1398,7 @@ function renderAhorros() {
       <div class="card-stripe"></div>
       <div style="margin-top:.3rem">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
-          <div style="font-weight:500;color:var(--tp)">${s.name}</div>
+          <div style="font-weight:500;color:var(--tp)">${s.emoji || '🐷'} ${s.name}</div>
           <button onclick="editAhorro('${s.id}')" style="background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.25rem .5rem;font-size:.72rem;cursor:pointer;color:var(--ts)">Editar</button>
         </div>
         <div style="font-size:1.3rem;font-weight:500;color:${color}">${fmt(s.currentCOP)}</div>
@@ -1436,6 +1444,11 @@ function addFunds(id) {
 
 function openAddAhorro() {
   openModal('Nueva meta de ahorro', `
+    <div class="form-group"><label>Emoji</label>
+      <div class="emoji-picker" id="sav-emoji-picker">
+        ${['🐷','✈️','🚗','🏠','💍','🎓','💻','🛡️','🌴','🎁'].map(e => `<span class="emoji-opt ${e==='🐷'?'selected':''}" onclick="selectEmoji(this,'${e}')">${e}</span>`).join('')}
+      </div>
+    </div>
     <div class="form-group"><label>Nombre</label><input type="text" id="sav-name" placeholder="ej: Vacaciones 🌴"></div>
     <div class="form-row">
       <div class="form-group"><label>Meta (USD)</label><input type="number" id="sav-goal" placeholder="1000"></div>
@@ -1448,7 +1461,8 @@ function openAddAhorro() {
       const p = getP();
       const name = document.getElementById('sav-name').value.trim();
       if (!name) return alert('Ingresa un nombre');
-      p.savings.push({ id: 'sav_' + Date.now(), name, goalUSD: parseFloat(document.getElementById('sav-goal').value)||0, monthlyUSD: parseFloat(document.getElementById('sav-monthly').value)||0, currentCOP: parseFloat(document.getElementById('sav-init').value)||0 });
+      const emoji = document.querySelector('#sav-emoji-picker .emoji-opt.selected')?.textContent || '🐷';
+      p.savings.push({ id: 'sav_' + Date.now(), name, emoji, goalUSD: parseFloat(document.getElementById('sav-goal').value)||0, monthlyUSD: parseFloat(document.getElementById('sav-monthly').value)||0, currentCOP: parseFloat(document.getElementById('sav-init').value)||0 });
       saveP(); closeModal(); renderAhorros();
     }}
   ]);
@@ -1457,6 +1471,11 @@ function openAddAhorro() {
 function editAhorro(id) {
   const p = getP(); const s = p.savings.find(x => x.id === id);
   openModal(`Editar: ${s.name}`, `
+    <div class="form-group"><label>Emoji</label>
+      <div class="emoji-picker" id="ea-emoji-picker">
+        ${['🐷','✈️','🚗','🏠','💍','🎓','💻','🛡️','🌴','🎁'].map(e => `<span class="emoji-opt ${e===(s.emoji||'🐷')?'selected':''}" onclick="selectEmoji(this,'${e}')">${e}</span>`).join('')}
+      </div>
+    </div>
     <div class="form-group"><label>Nombre</label><input type="text" id="ea-name" value="${s.name}"></div>
     <div class="form-row">
       <div class="form-group"><label>Meta (USD)</label><input type="number" id="ea-goal" value="${s.goalUSD}"></div>
@@ -1468,6 +1487,7 @@ function editAhorro(id) {
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Guardar', cls: 'btn-primary', action: () => {
       s.name = document.getElementById('ea-name').value.trim() || s.name;
+      s.emoji = document.querySelector('#ea-emoji-picker .emoji-opt.selected')?.textContent || s.emoji || '🐷';
       s.goalUSD = parseFloat(document.getElementById('ea-goal').value) || s.goalUSD;
       s.monthlyUSD = parseFloat(document.getElementById('ea-monthly').value) || s.monthlyUSD;
       s.currentCOP = parseFloat(document.getElementById('ea-current').value) || s.currentCOP;
@@ -1674,8 +1694,9 @@ function openAddViaje() {
       const goalCOP = parseFloat(document.getElementById('vj-goal').value) || 0;
       const tripId = 'vj_' + Date.now();
       const savingId = 'sav_' + Date.now();
-      p.savings.push({ id: savingId, name, code, tripId, goalUSD: goalCOP / p.settings.exchangeRate, currentCOP: 0, monthlyUSD: 0 });
-      p.travelBudgets.push({ id: tripId, code, savingId, name, destination: document.getElementById('vj-dest').value, date: document.getElementById('vj-date').value, goalCOP, emoji: document.getElementById('vj-emoji').value || '✈️' });
+      const tripEmoji = document.getElementById('vj-emoji').value || '✈️';
+      p.savings.push({ id: savingId, name, emoji: tripEmoji, code, tripId, goalUSD: goalCOP / p.settings.exchangeRate, currentCOP: 0, monthlyUSD: 0 });
+      p.travelBudgets.push({ id: tripId, code, savingId, name, destination: document.getElementById('vj-dest').value, date: document.getElementById('vj-date').value, goalCOP, emoji: tripEmoji });
       saveP(); closeModal(); renderViajes();
     }}
   ]);
@@ -1750,6 +1771,133 @@ function deleteViaje(id) {
   if (v) p.savings = p.savings.filter(s => s.id !== v.savingId);
   p.travelBudgets = p.travelBudgets.filter(v => v.id !== id);
   saveP(); renderViajes();
+}
+
+// ===== INVERSIONES =====
+function renderInversiones() {
+  const p = getP();
+  if (!p.investments) p.investments = [];
+  const today = new Date();
+  document.getElementById('inversiones-grid').innerHTML = p.investments.map(inv => {
+    const isVencida = inv.expectedReturnDate && new Date(inv.expectedReturnDate) < today;
+    const gain = inv.hasFixedInterest ? (inv.expectedReturnAmount || 0) - (inv.amount || 0) : 0;
+    return `<div class="card">
+      <div class="card-stripe" style="background:${isVencida ? 'var(--amber)' : 'var(--purple)'}"></div>
+      <div style="margin-top:.3rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-weight:500;color:var(--tp)">${inv.name}</div>
+            <div style="font-size:.76rem;color:var(--ts)">${inv.platform || 'Sin plataforma'}</div>
+          </div>
+          <span class="badge ${isVencida ? 'badge-amber' : 'badge-purple'}">${isVencida ? 'Vencida' : 'Activa'}</span>
+        </div>
+        <div style="font-size:1.2rem;font-weight:500;color:var(--purple);margin-top:.5rem">${fmt(inv.amount, inv.currency)}</div>
+        <div style="font-size:.76rem;color:var(--ts);margin-top:.2rem">Invertido${inv.investedDate ? `: ${dateStr(inv.investedDate)}` : ''}</div>
+        ${inv.expectedReturnDate ? `<div style="font-size:.76rem;color:var(--ts);margin-top:.1rem">Regresa: ${dateStr(inv.expectedReturnDate)}</div>` : ''}
+        ${inv.hasFixedInterest ? `
+          <div style="margin-top:.6rem;padding-top:.5rem;border-top:.5px dashed var(--bl)">
+            <div style="font-size:.76rem;color:var(--ts)">Interés fijo: <strong style="color:var(--tp)">${inv.interestRate}%</strong></div>
+            <div style="font-size:.76rem;color:var(--ts)">Retorno esperado: <strong style="color:var(--green)">${fmt(inv.expectedReturnAmount, inv.currency)}</strong></div>
+            <div style="font-size:.76rem;color:var(--green)">Ganancia: +${fmt(gain, inv.currency)}</div>
+          </div>` : ''}
+        <div style="display:flex;gap:.5rem;margin-top:.8rem">
+          <button onclick="editInversion('${inv.id}')" style="flex:1;background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.35rem;font-size:.78rem;cursor:pointer;color:var(--ts)">Editar</button>
+          <button onclick="deleteInversion('${inv.id}')" style="background:none;border:1px solid var(--red);border-radius:var(--rs);padding:.35rem .6rem;font-size:.78rem;cursor:pointer;color:var(--red)">🗑</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') + `<div class="card" style="border:2px dashed var(--bl);display:flex;align-items:center;justify-content:center;min-height:160px;cursor:pointer" onclick="openAddInversion()">
+    <div style="text-align:center;color:var(--ts)"><div style="font-size:1.5rem">📈</div><div style="font-size:.82rem">Nueva inversión</div></div>
+  </div>`;
+}
+
+function inversionFormFields(inv) {
+  const p = getP();
+  inv = inv || {};
+  return `
+    <div class="form-group"><label>Nombre</label><input type="text" id="iv-name" value="${inv.name||''}" placeholder="ej: CDT Bancolombia"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Plataforma</label><input type="text" id="iv-platform" value="${inv.platform||''}" placeholder="ej: Bancolombia, Trii, Binance"></div>
+      <div class="form-group"><label>Moneda</label>
+        <select id="iv-currency">
+          <option value="${p.settings.expenseCurrency}" ${(!inv.currency||inv.currency===p.settings.expenseCurrency)?'selected':''}>${p.settings.expenseCurrency}</option>
+          <option value="${p.settings.incomeCurrency}" ${inv.currency===p.settings.incomeCurrency?'selected':''}>${p.settings.incomeCurrency}</option>
+          <option value="EUR" ${inv.currency==='EUR'?'selected':''}>EUR</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Monto invertido</label><input type="number" id="iv-amount" value="${inv.amount||''}" placeholder="0"></div>
+      <div class="form-group"><label>Fecha de inversión</label><input type="date" id="iv-invested-date" value="${inv.investedDate||''}"></div>
+    </div>
+    <div class="form-group"><label>Fecha esperada de regreso</label><input type="date" id="iv-return-date" value="${inv.expectedReturnDate||''}"></div>
+    <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.85rem;color:var(--ts);margin-top:.6rem">
+      <input type="checkbox" id="iv-has-interest" onchange="toggleInvInterest()" ${inv.hasFixedInterest?'checked':''}>
+      ¿Tiene interés fijo conocido?
+    </label>
+    <div id="iv-interest-fields" style="display:${inv.hasFixedInterest?'block':'none'};margin-top:.7rem">
+      <div class="form-row">
+        <div class="form-group"><label>Interés total (%)</label><input type="number" step="0.01" id="iv-rate" value="${inv.interestRate||''}" placeholder="ej: 12.5"></div>
+        <div class="form-group"><label>Monto esperado de retorno</label><input type="number" id="iv-return-amount" value="${inv.expectedReturnAmount||''}" placeholder="0"></div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleInvInterest() {
+  document.getElementById('iv-interest-fields').style.display = document.getElementById('iv-has-interest').checked ? 'block' : 'none';
+}
+
+function openAddInversion() {
+  openModal('Nueva inversión', inversionFormFields(), [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Agregar', cls: 'btn-primary', action: () => {
+      const p = getP();
+      const name = document.getElementById('iv-name').value.trim();
+      if (!name) return alert('Ingresa el nombre');
+      if (!p.investments) p.investments = [];
+      p.investments.push({
+        id: 'inv_' + Date.now(),
+        name,
+        platform: document.getElementById('iv-platform').value.trim(),
+        currency: document.getElementById('iv-currency').value,
+        amount: parseFloat(document.getElementById('iv-amount').value) || 0,
+        investedDate: document.getElementById('iv-invested-date').value,
+        expectedReturnDate: document.getElementById('iv-return-date').value,
+        hasFixedInterest: document.getElementById('iv-has-interest').checked,
+        interestRate: parseFloat(document.getElementById('iv-rate').value) || 0,
+        expectedReturnAmount: parseFloat(document.getElementById('iv-return-amount').value) || 0
+      });
+      saveP(); closeModal(); renderInversiones();
+    }}
+  ]);
+}
+
+function editInversion(id) {
+  const p = getP();
+  const inv = p.investments.find(x => x.id === id);
+  if (!inv) return;
+  openModal(`Editar: ${inv.name}`, inversionFormFields(inv), [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Guardar', cls: 'btn-primary', action: () => {
+      inv.name = document.getElementById('iv-name').value.trim() || inv.name;
+      inv.platform = document.getElementById('iv-platform').value.trim();
+      inv.currency = document.getElementById('iv-currency').value;
+      inv.amount = parseFloat(document.getElementById('iv-amount').value) || 0;
+      inv.investedDate = document.getElementById('iv-invested-date').value;
+      inv.expectedReturnDate = document.getElementById('iv-return-date').value;
+      inv.hasFixedInterest = document.getElementById('iv-has-interest').checked;
+      inv.interestRate = parseFloat(document.getElementById('iv-rate').value) || 0;
+      inv.expectedReturnAmount = parseFloat(document.getElementById('iv-return-amount').value) || 0;
+      saveP(); closeModal(); renderInversiones();
+    }}
+  ]);
+}
+
+function deleteInversion(id) {
+  if (!confirm('¿Eliminar esta inversión?')) return;
+  getP().investments = getP().investments.filter(i => i.id !== id);
+  saveP(); renderInversiones();
 }
 
 // ===== RECORDATORIOS =====

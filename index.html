@@ -599,25 +599,9 @@ function defaultProfile(name, emoji, incomeCurrency, expenseCurrency, rate, pin)
       budgets: []
     },
     transactions: [],
-    debts: [
-      { id: 'd1', name: 'TC Bancolombia', balance: 0, limit: 0, cutDay: 15, payDay: 5, color: '#c8392b' },
-      { id: 'd2', name: 'Rappi Card', balance: 0, limit: 0, cutDay: 20, payDay: 10, color: '#ff6900' },
-      { id: 'd3', name: 'NU', balance: 0, limit: 0, cutDay: 18, payDay: 8, color: '#820ad1' },
-      { id: 'd4', name: 'Falabella', balance: 0, limit: 0, cutDay: 22, payDay: 12, color: '#00a650' },
-      { id: 'd5', name: 'Crédito Bancolombia', balance: 0, monthlyPayment: 0, totalDebt: 0, isCredit: true, color: '#185fa5' }
-    ],
-    savings: [
-      { id: 's1', name: 'Argentina ✈️', emoji: '✈️', goalUSD: 1200, currentCOP: 0, monthlyUSD: 100 },
-      { id: 's2', name: 'Carro 🚗', emoji: '🚗', goalUSD: 5000, currentCOP: 0, monthlyUSD: 100 },
-      { id: 's3', name: 'Emergencias 🛡️', emoji: '🛡️', goalUSD: 800, currentCOP: 0, monthlyUSD: 50 }
-    ],
-    reminders: [
-      { id: 'r1', name: 'Arriendo', amount: 0, currency: 'COP', dayOfMonth: 1 },
-      { id: 'r2', name: 'Seguridad Social', amount: 0, currency: 'COP', dayOfMonth: 10 },
-      { id: 'r3', name: 'Internet', amount: 0, currency: 'COP', dayOfMonth: 15 },
-      { id: 'r4', name: 'Netflix', amount: 0, currency: 'COP', dayOfMonth: 20 },
-      { id: 'r5', name: 'Amazon', amount: 0, currency: 'COP', dayOfMonth: 25 }
-    ],
+    debts: [],
+    savings: [],
+    reminders: [],
     travelBudgets: [],
     paidRemindersThisMonth: []
   };
@@ -1162,8 +1146,9 @@ function renderDeudas() {
         <div>
           <div style="font-weight:500;color:var(--tp);margin-bottom:.3rem">${d.name}</div>
           <div style="font-size:1.2rem;font-weight:500;color:var(--red)">${fmt(bal)}</div>
-          ${d.isCredit ? `<div style="font-size:.78rem;color:var(--ts)">Cuota mensual: ${fmt(d.monthlyPayment || 0)}</div>` :
+          ${d.isCredit ? `<div style="font-size:.78rem;color:var(--ts)">Cuota mensual: ${fmt(d.monthlyPayment || 0)}${d.termMonths ? ` · Plazo: ${d.termMonths}m` : ''}</div>` :
             `<div style="font-size:.78rem;color:var(--ts)">Corte día ${d.cutDay || '?'} · Pago día ${d.payDay || '?'}</div>`}
+          ${(d.interestRate || d.lateInterestRate) ? `<div style="font-size:.74rem;color:var(--amber);margin-top:.2rem">${d.interestRate ? `Interés: ${d.interestRate}%` : ''}${d.interestRate && d.lateInterestRate ? ' · ' : ''}${d.lateInterestRate ? `Mora: ${d.lateInterestRate}%` : ''}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:.4rem">
           <button onclick="editDeuda('${d.id}')" style="background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.3rem .6rem;font-size:.75rem;cursor:pointer;color:var(--ts)">Editar</button>
@@ -1202,6 +1187,11 @@ function openAddDeuda() {
         <div class="form-group"><label>Deuda total</label><input type="number" id="d-total" placeholder="0"></div>
         <div class="form-group"><label>Cuota mensual</label><input type="number" id="d-monthly" placeholder="0"></div>
       </div>
+      <div class="form-group"><label>Plazo (meses)</label><input type="number" id="d-term" placeholder="ej: 36"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Interés (% mensual)</label><input type="number" step="0.01" id="d-interest" placeholder="ej: 1.8"></div>
+      <div class="form-group"><label>Interés de mora (% mensual)</label><input type="number" step="0.01" id="d-late-interest" placeholder="ej: 3.5"></div>
     </div>
     <div class="form-group"><label>Color</label>
       <input type="color" id="d-color" value="#c8392b" style="height:36px;padding:2px">
@@ -1228,10 +1218,13 @@ function saveDeuda() {
     id: 'debt_' + Date.now(),
     name, color: document.getElementById('d-color').value,
     isCredit,
+    interestRate: parseFloat(document.getElementById('d-interest').value) || 0,
+    lateInterestRate: parseFloat(document.getElementById('d-late-interest').value) || 0,
     ...(isCredit ? {
       totalDebt: parseFloat(document.getElementById('d-total').value) || 0,
       monthlyPayment: parseFloat(document.getElementById('d-monthly').value) || 0,
-      balance: parseFloat(document.getElementById('d-total').value) || 0
+      balance: parseFloat(document.getElementById('d-total').value) || 0,
+      termMonths: parseInt(document.getElementById('d-term').value) || 0
     } : {
       balance: parseFloat(document.getElementById('d-balance').value) || 0,
       limit: parseFloat(document.getElementById('d-limit').value) || 0,
@@ -1252,7 +1245,8 @@ function editDeuda(id) {
       <div class="form-row">
         <div class="form-group"><label>Saldo actual</label><input type="number" id="ed-balance" value="${d.balance||0}"></div>
         <div class="form-group"><label>Cuota mensual</label><input type="number" id="ed-monthly" value="${d.monthlyPayment||0}"></div>
-      </div>` : `
+      </div>
+      <div class="form-group"><label>Plazo (meses)</label><input type="number" id="ed-term" value="${d.termMonths||0}"></div>` : `
       <div class="form-row">
         <div class="form-group"><label>Saldo actual</label><input type="number" id="ed-balance" value="${d.balance||0}"></div>
         <div class="form-group"><label>Cupo total</label><input type="number" id="ed-limit" value="${d.limit||0}"></div>
@@ -1261,13 +1255,19 @@ function editDeuda(id) {
         <div class="form-group"><label>Día de corte</label><input type="number" id="ed-cut" value="${d.cutDay||15}"></div>
         <div class="form-group"><label>Día de pago</label><input type="number" id="ed-pay" value="${d.payDay||5}"></div>
       </div>`}
-    <button onclick="deleteDeuda('${id}')" style="background:none;border:none;color:var(--red);font-size:.82rem;cursor:pointer;margin-top:.5rem">🗑 Eliminar esta deuda</button>
+    <div class="form-row" style="margin-top:.7rem">
+      <div class="form-group"><label>Interés (% mensual)</label><input type="number" step="0.01" id="ed-interest" value="${d.interestRate||0}"></div>
+      <div class="form-group"><label>Interés de mora (% mensual)</label><input type="number" step="0.01" id="ed-late-interest" value="${d.lateInterestRate||0}"></div>
+    </div>
+    <button onclick="deleteDeuda('${id}')" style="background:none;border:none;color:var(--red);font-size:.82rem;cursor:pointer;margin-top:.7rem">🗑 Eliminar esta deuda</button>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Guardar', cls: 'btn-primary', action: () => {
       d.name = document.getElementById('ed-name').value.trim() || d.name;
       d.balance = parseFloat(document.getElementById('ed-balance').value) || 0;
-      if (d.isCredit) d.monthlyPayment = parseFloat(document.getElementById('ed-monthly').value) || 0;
+      d.interestRate = parseFloat(document.getElementById('ed-interest').value) || 0;
+      d.lateInterestRate = parseFloat(document.getElementById('ed-late-interest').value) || 0;
+      if (d.isCredit) { d.monthlyPayment = parseFloat(document.getElementById('ed-monthly').value) || 0; d.termMonths = parseInt(document.getElementById('ed-term').value) || 0; }
       else { d.limit = parseFloat(document.getElementById('ed-limit').value) || 0; d.cutDay = parseInt(document.getElementById('ed-cut').value) || 15; d.payDay = parseInt(document.getElementById('ed-pay').value) || 5; }
       saveP(); closeModal(); renderDeudas();
     }}
@@ -1445,7 +1445,10 @@ function renderPresupuestos() {
           <div style="margin-top:.3rem">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
               <div style="font-weight:500;font-size:.9rem;color:var(--tp)">${cat}</div>
-              <button onclick="editGastoFijo('${cat}')" style="background:none;border:none;font-size:.75rem;color:var(--ts);cursor:pointer">✏️ Editar</button>
+              <div>
+                <button onclick="editGastoFijo('${cat}')" style="background:none;border:none;font-size:.75rem;color:var(--ts);cursor:pointer">✏️</button>
+                <button onclick="deleteGastoFijo('${cat}')" style="background:none;border:none;font-size:.75rem;color:var(--red);cursor:pointer">🗑</button>
+              </div>
             </div>
             ${monthlyFixed > 0 ? `<div style="font-size:.82rem;color:var(--ts);margin-bottom:.3rem">Monto fijo: <strong style="color:var(--tp)">${fmt(monthlyFixed)}</strong></div>` : ''}
             <div style="font-size:.85rem;color:var(--red);margin-bottom:.3rem">Gastado: ${fmt(spent)}</div>
@@ -1504,6 +1507,15 @@ function editGastoFijo(cat) {
       saveP(); closeModal(); renderPresupuestos();
     }}
   ]);
+}
+
+function deleteGastoFijo(cat) {
+  const p = getP();
+  if (p.settings.expenseCategories.length <= 1) return alert('Debe quedar al menos una categoría');
+  if (!confirm(`¿Eliminar la categoría "${cat}"? Los movimientos ya registrados con esta categoría no se borran.`)) return;
+  p.settings.expenseCategories = p.settings.expenseCategories.filter(c => c !== cat);
+  if (p.settings.budgets) p.settings.budgets = p.settings.budgets.filter(b => b.cat !== cat);
+  saveP(); renderPresupuestos();
 }
 
 function marcarGastoFijoPagado(cat) {

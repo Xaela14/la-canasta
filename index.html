@@ -594,6 +594,7 @@ function defaultProfile(name, emoji, incomeCurrency, expenseCurrency, rate, pin)
       exchangeRate: parseFloat(rate) || 4150,
       exchangeHistory: [{ date: new Date().toISOString().split('T')[0], rate: parseFloat(rate) || 4150 }],
       monthlySavingsGoalUSD: 250,
+      nextTripNumber: 1,
       expenseCategories: ['Arriendo','Seguridad Social','Internet','Gas','Agua','Energía','Amazon','Netflix','Cloud Paramount','Gasolina','Comida','Otros'],
       incomeCategories: ['Salario','Freelance','Otros ingresos'],
       budgets: []
@@ -1597,19 +1598,22 @@ function marcarGastoFijoPagado(cat) {
 
 // ===== VIAJES =====
 function genTripCode(p) {
-  let code;
-  do {
-    code = String(Math.floor(1000000000 + Math.random() * 9000000000));
-  } while ((p.travelBudgets || []).some(v => v.code === code));
-  return code;
+  const n = p.settings.nextTripNumber || 1;
+  p.settings.nextTripNumber = n + 1;
+  return String(n).padStart(9, '0');
 }
 
 function renderViajes() {
   const p = getP();
   const r = p.settings.exchangeRate;
   document.getElementById('viajes-grid').innerHTML = (p.travelBudgets || []).map(v => {
-    const pct = v.goalCOP > 0 ? Math.min(100, (v.currentCOP / v.goalCOP) * 100) : 0;
+    const saving = p.savings.find(s => s.id === v.savingId);
+    const currentCOP = saving ? (saving.currentCOP || 0) : 0;
+    const goalCOP = saving ? (saving.goalUSD || 0) * r : (v.goalCOP || 0);
+    const pct = goalCOP > 0 ? Math.min(100, (currentCOP / goalCOP) * 100) : 0;
     const color = pct >= 100 ? 'var(--green)' : 'var(--purple)';
+    const linkedDebts = p.debts.filter(d => d.tripId === v.id);
+    const totalDebt = linkedDebts.reduce((s, d) => s + (d.balance || d.totalDebt || 0), 0);
     return `<div class="card">
       <div class="card-stripe"></div>
       <div style="margin-top:.3rem">
@@ -1619,10 +1623,19 @@ function renderViajes() {
         </div>
         <div style="font-size:.7rem;color:var(--tm);font-family:monospace;margin:.1rem 0">#${v.code || '—'}</div>
         <div style="font-size:.78rem;color:var(--ts);margin:.2rem 0">${v.destination || ''} · ${v.date ? new Date(v.date).toLocaleDateString('es-CO',{month:'short',year:'numeric'}) : ''}</div>
-        <div style="font-size:1.2rem;font-weight:500;color:${color}">${fmt(v.currentCOP)}</div>
-        <div style="font-size:.78rem;color:var(--ts)">Meta: ${fmt(v.goalCOP)}</div>
+        <div style="font-size:1.2rem;font-weight:500;color:${color}">${fmt(currentCOP)}</div>
+        <div style="font-size:.78rem;color:var(--ts)">Meta: ${fmt(goalCOP)}</div>
         <div class="progress" style="margin-top:.6rem"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
-        <button onclick="addViajesFunds('${v.id}')" style="margin-top:.7rem;width:100%;padding:.4rem;background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple);border-radius:var(--rs);cursor:pointer;font-size:.8rem">+ Agregar fondos</button>
+        ${totalDebt > 0 ? `<div style="font-size:.76rem;color:var(--red);margin-top:.5rem">Pasivos del viaje: ${fmt(totalDebt)}</div>` : ''}
+        ${linkedDebts.length > 0 ? linkedDebts.map(d => `
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:.75rem;padding:.3rem 0;border-top:.5px dashed var(--bl)">
+            <span style="color:var(--ts)">${d.name}</span>
+            <span style="color:var(--red);font-weight:500">${fmt(d.balance||d.totalDebt||0)}</span>
+          </div>`).join('') : ''}
+        <div style="display:flex;gap:.5rem;margin-top:.7rem">
+          <button onclick="addViajesFunds('${v.id}')" style="flex:1;padding:.4rem;background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple);border-radius:var(--rs);cursor:pointer;font-size:.78rem">+ Fondos</button>
+          <button onclick="addViajePasivo('${v.id}')" style="flex:1;padding:.4rem;background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:var(--rs);cursor:pointer;font-size:.78rem">+ Pasivo</button>
+        </div>
       </div>
     </div>`;
   }).join('') + `<div class="card" style="border:2px dashed var(--bl);display:flex;align-items:center;justify-content:center;min-height:160px;cursor:pointer" onclick="openAddViaje()">
@@ -1641,6 +1654,9 @@ function openAddViaje() {
       <div class="form-group"><label>Meta total (COP)</label><input type="number" id="vj-goal" placeholder="0"></div>
       <div class="form-group"><label>Emoji</label><input type="text" id="vj-emoji" placeholder="✈️" maxlength="2"></div>
     </div>
+    <div style="background:var(--purple-bg);border-radius:var(--rs);padding:.6rem .8rem;margin-top:.5rem;font-size:.78rem;color:var(--purple)">
+      Al crear el viaje se genera automáticamente una meta de ahorro vinculada con el mismo nombre y número.
+    </div>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Crear', cls: 'btn-primary', action: () => {
@@ -1648,29 +1664,85 @@ function openAddViaje() {
       const name = document.getElementById('vj-name').value.trim();
       if (!name) return alert('Ingresa el nombre');
       if (!p.travelBudgets) p.travelBudgets = [];
-      p.travelBudgets.push({ id: 'vj_'+Date.now(), code: genTripCode(p), name, destination: document.getElementById('vj-dest').value, date: document.getElementById('vj-date').value, goalCOP: parseFloat(document.getElementById('vj-goal').value)||0, currentCOP: 0, emoji: document.getElementById('vj-emoji').value||'✈️' });
+      const code = genTripCode(p);
+      const goalCOP = parseFloat(document.getElementById('vj-goal').value) || 0;
+      const tripId = 'vj_' + Date.now();
+      const savingId = 'sav_' + Date.now();
+      p.savings.push({ id: savingId, name, code, tripId, goalUSD: goalCOP / p.settings.exchangeRate, currentCOP: 0, monthlyUSD: 0 });
+      p.travelBudgets.push({ id: tripId, code, savingId, name, destination: document.getElementById('vj-dest').value, date: document.getElementById('vj-date').value, goalCOP, emoji: document.getElementById('vj-emoji').value || '✈️' });
       saveP(); closeModal(); renderViajes();
     }}
   ]);
 }
 
 function addViajesFunds(id) {
-  const p = getP(); const v = p.travelBudgets.find(x => x.id === id);
+  const p = getP();
+  const v = p.travelBudgets.find(x => x.id === id);
+  const saving = p.savings.find(s => s.id === v.savingId);
   openModal(`Fondos: ${v.name}`, `
-    <div class="form-group"><label>Monto (${p.settings.expenseCurrency})</label><input type="number" id="vf-amount" placeholder="0"></div>
+    <div class="form-group"><label>Monto</label><input type="number" id="vf-amount" placeholder="0"></div>
+    <div class="form-group" style="margin-top:.7rem"><label>Moneda</label>
+      <select id="vf-currency">
+        <option value="${p.settings.expenseCurrency}">${p.settings.expenseCurrency}</option>
+        <option value="${p.settings.incomeCurrency}">${p.settings.incomeCurrency}</option>
+      </select>
+    </div>
+    <div style="background:var(--purple-bg);border-radius:var(--rs);padding:.6rem .8rem;margin-top:.6rem;font-size:.78rem;color:var(--purple)">
+      Esto se registra como ahorro en Movimientos y descuenta del disponible.
+    </div>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Agregar', cls: 'btn-primary', action: () => {
-      const prev = v.currentCOP;
-      v.currentCOP += parseFloat(document.getElementById('vf-amount').value)||0;
+      const amount = parseFloat(document.getElementById('vf-amount').value) || 0;
+      if (!amount) return alert('Ingresa un monto válido');
+      const currency = document.getElementById('vf-currency').value;
+      const amountCOP = toExpenseCurrency(amount, currency);
+      const prev = saving.currentCOP || 0;
+      saving.currentCOP = prev + amountCOP;
+      p.transactions.push({
+        id: Date.now().toString(), type: 'ahorro',
+        amount, currency, category: saving.name, savingId: saving.id,
+        date: new Date().toISOString().split('T')[0], description: `Aporte viaje ${v.name}`
+      });
       saveP(); closeModal(); renderViajes();
-      if (prev < v.goalCOP && v.currentCOP >= v.goalCOP) showBear('¡Viaje listo!', `Ya tienes para ${v.name} 🎒`);
+      const goalCOP = (saving.goalUSD || 0) * p.settings.exchangeRate;
+      if (prev < goalCOP && saving.currentCOP >= goalCOP) showBear('¡Viaje listo!', `Ya tienes para ${v.name} 🎒`);
     }}
   ]);
 }
+
+function addViajePasivo(id) {
+  const p = getP();
+  const v = p.travelBudgets.find(x => x.id === id);
+  openModal(`Pasivo del viaje: ${v.name}`, `
+    <div class="form-group"><label>Nombre del pasivo</label><input type="text" id="vp-name" placeholder="ej: Vuelo financiado"></div>
+    <div class="form-group" style="margin-top:.7rem"><label>Monto (${p.settings.expenseCurrency})</label><input type="number" id="vp-amount" placeholder="0"></div>
+    <div style="background:var(--red-bg);border-radius:var(--rs);padding:.6rem .8rem;margin-top:.6rem;font-size:.78rem;color:var(--red)">
+      Se crea como deuda vinculada al viaje. Edítala luego en Deudas para agregar interés, plazo, etc.
+    </div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Registrar', cls: 'btn-primary', action: () => {
+      const name = document.getElementById('vp-name').value.trim();
+      const amount = parseFloat(document.getElementById('vp-amount').value) || 0;
+      if (!name || !amount) return alert('Completa nombre y monto');
+      p.debts.push({
+        id: 'debt_' + Date.now(), name, tripId: v.id,
+        isCredit: true, totalDebt: amount, balance: amount,
+        monthlyPayment: 0, interestRate: 0, lateInterestRate: 0,
+        color: '#c8392b', paidMonths: []
+      });
+      saveP(); closeModal(); renderViajes();
+    }}
+  ]);
+}
+
 function deleteViaje(id) {
-  if (!confirm('¿Eliminar este viaje?')) return;
-  getP().travelBudgets = getP().travelBudgets.filter(v => v.id !== id);
+  if (!confirm('¿Eliminar este viaje? La meta de ahorro vinculada también se eliminará.')) return;
+  const p = getP();
+  const v = p.travelBudgets.find(x => x.id === id);
+  if (v) p.savings = p.savings.filter(s => s.id !== v.savingId);
+  p.travelBudgets = p.travelBudgets.filter(v => v.id !== id);
   saveP(); renderViajes();
 }
 

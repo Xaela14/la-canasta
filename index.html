@@ -1597,10 +1597,13 @@ function marcarGastoFijoPagado(cat) {
 }
 
 // ===== VIAJES =====
-function genTripCode(p) {
-  const n = p.settings.nextTripNumber || 1;
-  p.settings.nextTripNumber = n + 1;
-  return String(n).padStart(9, '0');
+async function genTripCode() {
+  const { data, error } = await sb.rpc('get_next_trip_number');
+  if (error || data == null) {
+    console.warn('Trip counter RPC failed, using fallback', error);
+    return null;
+  }
+  return String(data).padStart(9, '0');
 }
 
 function renderViajes() {
@@ -1659,12 +1662,15 @@ function openAddViaje() {
     </div>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
-    { label: 'Crear', cls: 'btn-primary', action: () => {
+    { label: 'Crear', cls: 'btn-primary', action: async () => {
       const p = getP();
       const name = document.getElementById('vj-name').value.trim();
       if (!name) return alert('Ingresa el nombre');
       if (!p.travelBudgets) p.travelBudgets = [];
-      const code = genTripCode(p);
+      const btn = document.getElementById('mbtn-1');
+      if (btn) { btn.disabled = true; btn.textContent = 'Generando número...'; }
+      const code = await genTripCode();
+      if (!code) { if (btn) { btn.disabled = false; btn.textContent = 'Crear'; } return alert('No se pudo generar el número de viaje. Revisa tu conexión a internet e intenta de nuevo.'); }
       const goalCOP = parseFloat(document.getElementById('vj-goal').value) || 0;
       const tripId = 'vj_' + Date.now();
       const savingId = 'sav_' + Date.now();

@@ -1596,6 +1596,14 @@ function marcarGastoFijoPagado(cat) {
 }
 
 // ===== VIAJES =====
+function genTripCode(p) {
+  let code;
+  do {
+    code = String(Math.floor(1000000000 + Math.random() * 9000000000));
+  } while ((p.travelBudgets || []).some(v => v.code === code));
+  return code;
+}
+
 function renderViajes() {
   const p = getP();
   const r = p.settings.exchangeRate;
@@ -1609,6 +1617,7 @@ function renderViajes() {
           <div style="font-weight:500">${v.emoji || '✈️'} ${v.name}</div>
           <button onclick="deleteViaje('${v.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.8rem">✕</button>
         </div>
+        <div style="font-size:.7rem;color:var(--tm);font-family:monospace;margin:.1rem 0">#${v.code || '—'}</div>
         <div style="font-size:.78rem;color:var(--ts);margin:.2rem 0">${v.destination || ''} · ${v.date ? new Date(v.date).toLocaleDateString('es-CO',{month:'short',year:'numeric'}) : ''}</div>
         <div style="font-size:1.2rem;font-weight:500;color:${color}">${fmt(v.currentCOP)}</div>
         <div style="font-size:.78rem;color:var(--ts)">Meta: ${fmt(v.goalCOP)}</div>
@@ -1639,7 +1648,7 @@ function openAddViaje() {
       const name = document.getElementById('vj-name').value.trim();
       if (!name) return alert('Ingresa el nombre');
       if (!p.travelBudgets) p.travelBudgets = [];
-      p.travelBudgets.push({ id: 'vj_'+Date.now(), name, destination: document.getElementById('vj-dest').value, date: document.getElementById('vj-date').value, goalCOP: parseFloat(document.getElementById('vj-goal').value)||0, currentCOP: 0, emoji: document.getElementById('vj-emoji').value||'✈️' });
+      p.travelBudgets.push({ id: 'vj_'+Date.now(), code: genTripCode(p), name, destination: document.getElementById('vj-dest').value, date: document.getElementById('vj-date').value, goalCOP: parseFloat(document.getElementById('vj-goal').value)||0, currentCOP: 0, emoji: document.getElementById('vj-emoji').value||'✈️' });
       saveP(); closeModal(); renderViajes();
     }}
   ]);

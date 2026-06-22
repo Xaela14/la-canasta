@@ -1133,7 +1133,46 @@ function deleteMovimiento(id) {
 }
 
 // ===== DEUDAS =====
+function applyMonthlyInterest() {
+  const p = getP();
+  if (!p) return;
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+  const today = now.getDate();
+  let changed = false;
+
+  p.debts.forEach(d => {
+    const balance = d.balance || 0;
+    if (balance <= 0) return;
+    if (d.lastInterestMonth === monthKey) return;
+
+    const paidThisCycle = d.paidMonths?.includes(monthKey);
+    const payDay = d.isCredit ? null : d.payDay;
+    const isLate = payDay && today > payDay && !paidThisCycle;
+
+    let rate = d.interestRate || 0;
+    if (isLate) {
+      rate = d.lateInterestMode === 'add'
+        ? (d.interestRate || 0) + (d.lateInterestRate || 0)
+        : (d.lateInterestRate || rate);
+    }
+
+    if (rate > 0) {
+      const interest = balance * (rate / 100);
+      d.balance = balance + interest;
+      if (d.isCredit && d.totalDebt) d.totalDebt = (d.totalDebt || 0) + interest;
+      d.lastInterestAmount = interest;
+      d.lastInterestWasLate = isLate;
+      changed = true;
+    }
+    d.lastInterestMonth = monthKey;
+  });
+
+  if (changed) saveP();
+}
+
 function renderDeudas() {
+  applyMonthlyInterest();
   const p = getP();
   document.getElementById('deudas-grid').innerHTML = p.debts.map(d => {
     const bal = d.balance || d.totalDebt || 0;
@@ -1149,6 +1188,7 @@ function renderDeudas() {
           ${d.isCredit ? `<div style="font-size:.78rem;color:var(--ts)">Cuota mensual: ${fmt(d.monthlyPayment || 0)}${d.termMonths ? ` · Plazo: ${d.termMonths}m` : ''}</div>` :
             `<div style="font-size:.78rem;color:var(--ts)">Corte día ${d.cutDay || '?'} · Pago día ${d.payDay || '?'}</div>`}
           ${(d.interestRate || d.lateInterestRate) ? `<div style="font-size:.74rem;color:var(--amber);margin-top:.2rem">${d.interestRate ? `Interés: ${d.interestRate}%` : ''}${d.interestRate && d.lateInterestRate ? ' · ' : ''}${d.lateInterestRate ? `Mora: ${d.lateInterestRate}%` : ''}</div>` : ''}
+          ${d.lastInterestAmount > 0 ? `<div style="font-size:.72rem;color:${d.lastInterestWasLate ? 'var(--red)' : 'var(--ts)'};margin-top:.2rem">${d.lastInterestWasLate ? '⚠️ Mora aplicada' : 'Interés aplicado'} este mes: +${fmt(d.lastInterestAmount)}</div>` : ''}
         </div>
         <div style="display:flex;flex-direction:column;gap:.4rem">
           <button onclick="editDeuda('${d.id}')" style="background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.3rem .6rem;font-size:.75rem;cursor:pointer;color:var(--ts)">Editar</button>
@@ -1193,6 +1233,12 @@ function openAddDeuda() {
       <div class="form-group"><label>Interés (% mensual)</label><input type="number" step="0.01" id="d-interest" placeholder="ej: 1.8"></div>
       <div class="form-group"><label>Interés de mora (% mensual)</label><input type="number" step="0.01" id="d-late-interest" placeholder="ej: 3.5"></div>
     </div>
+    <div class="form-group"><label>Si te atrasas en el pago, la mora...</label>
+      <select id="d-late-mode">
+        <option value="replace">Reemplaza el interés normal</option>
+        <option value="add">Se suma al interés normal</option>
+      </select>
+    </div>
     <div class="form-group"><label>Color</label>
       <input type="color" id="d-color" value="#c8392b" style="height:36px;padding:2px">
     </div>
@@ -1220,6 +1266,8 @@ function saveDeuda() {
     isCredit,
     interestRate: parseFloat(document.getElementById('d-interest').value) || 0,
     lateInterestRate: parseFloat(document.getElementById('d-late-interest').value) || 0,
+    lateInterestMode: document.getElementById('d-late-mode').value,
+    paidMonths: [],
     ...(isCredit ? {
       totalDebt: parseFloat(document.getElementById('d-total').value) || 0,
       monthlyPayment: parseFloat(document.getElementById('d-monthly').value) || 0,
@@ -1259,6 +1307,12 @@ function editDeuda(id) {
       <div class="form-group"><label>Interés (% mensual)</label><input type="number" step="0.01" id="ed-interest" value="${d.interestRate||0}"></div>
       <div class="form-group"><label>Interés de mora (% mensual)</label><input type="number" step="0.01" id="ed-late-interest" value="${d.lateInterestRate||0}"></div>
     </div>
+    <div class="form-group"><label>Si te atrasas en el pago, la mora...</label>
+      <select id="ed-late-mode">
+        <option value="replace" ${(!d.lateInterestMode || d.lateInterestMode==='replace') ? 'selected' : ''}>Reemplaza el interés normal</option>
+        <option value="add" ${d.lateInterestMode==='add' ? 'selected' : ''}>Se suma al interés normal</option>
+      </select>
+    </div>
     <button onclick="deleteDeuda('${id}')" style="background:none;border:none;color:var(--red);font-size:.82rem;cursor:pointer;margin-top:.7rem">🗑 Eliminar esta deuda</button>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
@@ -1267,6 +1321,7 @@ function editDeuda(id) {
       d.balance = parseFloat(document.getElementById('ed-balance').value) || 0;
       d.interestRate = parseFloat(document.getElementById('ed-interest').value) || 0;
       d.lateInterestRate = parseFloat(document.getElementById('ed-late-interest').value) || 0;
+      d.lateInterestMode = document.getElementById('ed-late-mode').value;
       if (d.isCredit) { d.monthlyPayment = parseFloat(document.getElementById('ed-monthly').value) || 0; d.termMonths = parseInt(document.getElementById('ed-term').value) || 0; }
       else { d.limit = parseFloat(document.getElementById('ed-limit').value) || 0; d.cutDay = parseInt(document.getElementById('ed-cut').value) || 15; d.payDay = parseInt(document.getElementById('ed-pay').value) || 5; }
       saveP(); closeModal(); renderDeudas();
@@ -1306,6 +1361,9 @@ function abonarDeuda(id) {
       const prevBalance = d.balance || 0;
       d.balance = Math.max(0, prevBalance - amount);
       if (d.isCredit && d.totalDebt) d.totalDebt = Math.max(0, (d.totalDebt || 0) - amount);
+      const monthKey = `${new Date(date).getFullYear()}-${new Date(date).getMonth()}`;
+      if (!d.paidMonths) d.paidMonths = [];
+      if (!d.paidMonths.includes(monthKey)) d.paidMonths.push(monthKey);
       p.transactions.push({
         id: Date.now().toString(), type: 'expense',
         amount, currency: p.settings.expenseCurrency,

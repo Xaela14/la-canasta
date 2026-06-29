@@ -372,6 +372,7 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
       <button class="nav-item" onclick="nav('presupuestos')"><i class="ti ti-wallet"></i> Gastos Mensuales</button>
       <button class="nav-item" onclick="nav('viajes')"><i class="ti ti-plane"></i> Viajes</button>
       <button class="nav-item" onclick="nav('inversiones')"><i class="ti ti-trending-up"></i> Inversiones</button>
+      <button class="nav-item" onclick="nav('cuentas')"><i class="ti ti-building-bank"></i> Cuentas</button>
       <button class="nav-item" onclick="nav('recordatorios')"><i class="ti ti-bell"></i> Recordatorios <span class="nav-badge" id="badge-rem"></span></button>
       <button class="nav-item" onclick="nav('reportes')"><i class="ti ti-chart-pie"></i> Reportes</button>
       <button class="nav-item" onclick="nav('ajustes')"><i class="ti ti-settings"></i> Ajustes</button>
@@ -407,18 +408,25 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 
     <!-- MOVIMIENTOS -->
     <div class="section" id="sec-movimientos">
-      <div class="section-title">
-        Movimientos
-        <div style="display:flex;gap:.6rem;align-items:center">
-          <select id="mv-filter-cat" onchange="renderMovimientos()" style="padding:.35rem .6rem;border:1px solid var(--bl);border-radius:var(--rs);font-size:.82rem;color:var(--tp);background:var(--bg-card)">
-            <option value="">Todas las categorías</option>
-          </select>
-          <select id="mv-filter-type" onchange="renderMovimientos()" style="padding:.35rem .6rem;border:1px solid var(--bl);border-radius:var(--rs);font-size:.82rem;color:var(--tp);background:var(--bg-card)">
-            <option value="">Todos</option>
-            <option value="income">Ingresos</option>
-            <option value="expense">Gastos</option>
-          </select>
-        </div>
+      <div class="section-title">Movimientos</div>
+      <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem">
+        <input type="text" id="mv-filter-text" placeholder="🔍 Buscar descripción o categoría..." oninput="renderMovimientos()" style="padding:.35rem .7rem;border:1px solid var(--bl);border-radius:var(--rs);font-size:.82rem;color:var(--tp);background:var(--bg-card);flex:1;min-width:160px">
+        <input type="date" id="mv-filter-from" onchange="renderMovimientos()" title="Desde" style="padding:.35rem .5rem;border:1px solid var(--bl);border-radius:var(--rs);font-size:.82rem;color:var(--tp);background:var(--bg-card)">
+        <input type="date" id="mv-filter-to" onchange="renderMovimientos()" title="Hasta" style="padding:.35rem .5rem;border:1px solid var(--bl);border-radius:var(--rs);font-size:.82rem;color:var(--tp);background:var(--bg-card)">
+        <select id="mv-filter-cat" onchange="renderMovimientos()" style="padding:.35rem .6rem;border:1px solid var(--bl);border-radius:var(--rs);font-size:.82rem;color:var(--tp);background:var(--bg-card)">
+          <option value="">Todas las categorías</option>
+        </select>
+        <select id="mv-filter-type" onchange="renderMovimientos()" style="padding:.35rem .6rem;border:1px solid var(--bl);border-radius:var(--rs);font-size:.82rem;color:var(--tp);background:var(--bg-card)">
+          <option value="">Todos los tipos</option>
+          <option value="income">Ingresos</option>
+          <option value="expense">Gastos</option>
+          <option value="ahorro">Ahorros</option>
+        </select>
+        <select id="mv-sort" onchange="renderMovimientos()" style="padding:.35rem .6rem;border:1px solid var(--bl);border-radius:var(--rs);font-size:.82rem;color:var(--tp);background:var(--bg-card)">
+          <option value="desc">Más reciente primero</option>
+          <option value="asc">Más antiguo primero</option>
+        </select>
+        <button onclick="clearMvFilters()" style="padding:.35rem .7rem;border:1px solid var(--bl);border-radius:var(--rs);font-size:.78rem;cursor:pointer;background:var(--bg-card);color:var(--ts)">✕ Limpiar</button>
       </div>
       <div class="card" style="padding:0;overflow:hidden">
         <table class="data-table" id="mv-table">
@@ -456,6 +464,12 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
     <div class="section" id="sec-inversiones">
       <div class="section-title">Inversiones</div>
       <div id="inversiones-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem"></div>
+    </div>
+
+    <!-- CUENTAS BANCARIAS -->
+    <div class="section" id="sec-cuentas">
+      <div class="section-title">Cuentas bancarias</div>
+      <div id="cuentas-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem"></div>
     </div>
 
     <!-- RECORDATORIOS -->
@@ -612,7 +626,8 @@ function defaultProfile(name, emoji, incomeCurrency, expenseCurrency, rate, pin)
     reminders: [],
     travelBudgets: [],
     investments: [],
-    paidRemindersThisMonth: []
+    paidRemindersThisMonth: [],
+    bankAccounts: []
   };
 }
 
@@ -731,10 +746,10 @@ function nav(section) {
   const sec = document.getElementById('sec-' + section);
   if (sec) sec.classList.add('active');
   // Show/hide FAB
-  const fabSections = ['movimientos', 'deudas', 'ahorros', 'presupuestos', 'viajes', 'inversiones', 'recordatorios'];
+  const fabSections = ['movimientos', 'deudas', 'ahorros', 'presupuestos', 'viajes', 'inversiones', 'cuentas', 'recordatorios'];
   document.getElementById('fab-btn').style.display = fabSections.includes(section) ? 'flex' : 'none';
   // Render
-  const renders = { dashboard: renderDashboard, movimientos: renderMovimientos, deudas: renderDeudas, ahorros: renderAhorros, presupuestos: renderPresupuestos, viajes: renderViajes, inversiones: renderInversiones, recordatorios: renderRecordatorios, reportes: renderReportes, ajustes: renderAjustes };
+  const renders = { dashboard: renderDashboard, movimientos: renderMovimientos, deudas: renderDeudas, ahorros: renderAhorros, presupuestos: renderPresupuestos, viajes: renderViajes, inversiones: renderInversiones, cuentas: renderCuentas, recordatorios: renderRecordatorios, reportes: renderReportes, ajustes: renderAjustes };
   if (renders[section]) renders[section]();
   updateBadges();
 }
@@ -742,7 +757,7 @@ function nav(section) {
 function openFab() {
   const active = document.querySelector('.nav-item.active')?.getAttribute('onclick') || '';
   const sec = active.match(/'(\w+)'/)?.[1];
-  const actions = { movimientos: openAddMovimiento, deudas: openAddDeuda, ahorros: openAddAhorro, presupuestos: openAddPresupuesto, viajes: openAddViaje, inversiones: openAddInversion, recordatorios: openAddRecordatorio };
+  const actions = { movimientos: openAddMovimiento, deudas: openAddDeuda, ahorros: openAddAhorro, presupuestos: openAddPresupuesto, viajes: openAddViaje, inversiones: openAddInversion, cuentas: openAddCuenta, recordatorios: openAddRecordatorio };
   if (actions[sec]) actions[sec]();
 }
 
@@ -911,28 +926,38 @@ function renderDashboard() {
 }
 
 // ===== MOVIMIENTOS =====
+function clearMvFilters() {
+  ['mv-filter-text','mv-filter-from','mv-filter-to'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['mv-filter-cat','mv-filter-type','mv-sort'].forEach(id => { const el = document.getElementById(id); if (el) el.selectedIndex = 0; });
+  renderMovimientos();
+}
+
 function renderMovimientos() {
   const p = getP();
+  const filterText = (document.getElementById('mv-filter-text')?.value || '').toLowerCase();
+  const filterFrom = document.getElementById('mv-filter-from')?.value || '';
+  const filterTo = document.getElementById('mv-filter-to')?.value || '';
   const filterCat = document.getElementById('mv-filter-cat')?.value || '';
   const filterType = document.getElementById('mv-filter-type')?.value || '';
+  const sortDir = document.getElementById('mv-sort')?.value || 'desc';
 
-  // Populate category filter
+  // Rebuild category filter options
   const catSel = document.getElementById('mv-filter-cat');
-  if (catSel && catSel.options.length === 1) {
-    [...p.settings.incomeCategories, ...p.settings.expenseCategories, ...p.savings.map(s=>s.name)].forEach(c => {
-      const o = document.createElement('option'); o.value = c; o.textContent = c; catSel.appendChild(o);
-    });
+  if (catSel) {
+    const prev = catSel.value;
+    catSel.innerHTML = '<option value="">Todas las categorías</option>';
+    const allCats = [...new Set([...p.settings.incomeCategories, ...p.settings.expenseCategories, ...p.savings.map(s=>s.name)])];
+    allCats.forEach(c => { const o = document.createElement('option'); o.value = c; o.textContent = c; catSel.appendChild(o); });
+    catSel.value = prev;
   }
 
-  // Update type filter to include ahorro
-  const typeSel = document.getElementById('mv-filter-type');
-  if (typeSel && typeSel.options.length === 3) {
-    const o = document.createElement('option'); o.value = 'ahorro'; o.textContent = 'Ahorros'; typeSel.appendChild(o);
-  }
-
-  let txs = [...p.transactions].sort((a, b) => new Date(b.date) - new Date(a.date));
-  if (filterCat) txs = txs.filter(t => t.category === filterCat);
+  let txs = [...p.transactions];
+  if (filterText) txs = txs.filter(t => (t.description||'').toLowerCase().includes(filterText) || (t.category||'').toLowerCase().includes(filterText));
+  if (filterFrom) txs = txs.filter(t => t.date >= filterFrom);
+  if (filterTo)   txs = txs.filter(t => t.date <= filterTo);
+  if (filterCat)  txs = txs.filter(t => t.category === filterCat);
   if (filterType) txs = txs.filter(t => t.type === filterType);
+  txs.sort((a, b) => sortDir === 'asc' ? new Date(a.date) - new Date(b.date) : new Date(b.date) - new Date(a.date));
 
   const typeBadge = { income: 'badge-green', expense: 'badge-red', ahorro: 'badge-purple' };
   const typeLabel = { income: 'Ingreso', expense: 'Gasto', ahorro: 'Ahorro' };
@@ -1202,6 +1227,7 @@ function renderDeudas() {
         <div style="display:flex;flex-direction:column;gap:.4rem">
           <button onclick="editDeuda('${d.id}')" style="background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.3rem .6rem;font-size:.75rem;cursor:pointer;color:var(--ts)">Editar</button>
           <button onclick="abonarDeuda('${d.id}')" style="background:var(--green-bg);border:1px solid var(--green);border-radius:var(--rs);padding:.3rem .6rem;font-size:.75rem;cursor:pointer;color:var(--green);font-weight:500">💳 Abonar</button>
+          <button onclick="verHistorialDeuda('${d.id}')" style="background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.3rem .6rem;font-size:.75rem;cursor:pointer;color:var(--ts)">📋 Historial</button>
         </div>
       </div>
       ${limit > 0 ? `<div class="progress" style="margin-top:.8rem"><div class="progress-fill" style="width:${pct}%;background:${barColor}"></div></div>
@@ -1343,13 +1369,42 @@ function deleteDeuda(id) {
   saveP(); closeModal(); renderDeudas();
 }
 
+function verHistorialDeuda(id) {
+  const p = getP();
+  const d = p.debts.find(x => x.id === id);
+  if (!d) return;
+  const txs = p.transactions.filter(t => t.debtId === id || (t.category === d.name && t.description?.includes('Abono'))).sort((a, b) => new Date(b.date) - new Date(a.date));
+  openModal(`📋 Historial — ${d.name}`, `
+    <div style="font-size:.82rem;color:var(--ts);margin-bottom:.8rem">Abonos registrados: ${txs.length} · Saldo actual: <strong style="color:var(--red)">${fmt(d.balance || 0)}</strong></div>
+    ${txs.length === 0 ? '<div style="text-align:center;color:var(--ts);padding:1rem">Sin abonos registrados aún</div>' :
+    `<div style="max-height:360px;overflow-y:auto">
+      <table class="data-table"><thead><tr><th>Fecha</th><th>Nota</th><th>Monto</th></tr></thead><tbody>
+        ${txs.map(t => `<tr>
+          <td style="color:var(--ts)">${dateStr(t.date)}</td>
+          <td>${t.description || '—'}</td>
+          <td style="font-weight:500;color:var(--green)">−${fmt(t.amount, t.currency)}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`}
+  `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
+}
+
 function abonarDeuda(id) {
   const p = getP();
   const d = p.debts.find(x => x.id === id);
   if (!d) return;
   openModal(`💳 Abonar a ${d.name}`, `
-    <div class="form-group"><label>Monto del abono (${p.settings.expenseCurrency})</label>
-      <input type="number" id="ab-amount" placeholder="0" value="${d.monthlyPayment || ''}">
+    <div class="form-row">
+      <div class="form-group"><label>Monto del abono</label>
+        <input type="number" id="ab-amount" placeholder="0" value="${d.monthlyPayment || ''}">
+      </div>
+      <div class="form-group"><label>Moneda</label>
+        <select id="ab-currency">
+          <option value="${p.settings.expenseCurrency}">${p.settings.expenseCurrency}</option>
+          <option value="${p.settings.incomeCurrency}">${p.settings.incomeCurrency}</option>
+          <option value="EUR">EUR</option>
+        </select>
+      </div>
     </div>
     <div class="form-group" style="margin-top:.7rem"><label>Fecha</label>
       <input type="date" id="ab-date" value="${new Date().toISOString().split('T')[0]}">
@@ -1373,10 +1428,11 @@ function abonarDeuda(id) {
       const monthKey = `${new Date(date).getFullYear()}-${new Date(date).getMonth()}`;
       if (!d.paidMonths) d.paidMonths = [];
       if (!d.paidMonths.includes(monthKey)) d.paidMonths.push(monthKey);
+      const abCurrency = document.getElementById('ab-currency')?.value || p.settings.expenseCurrency;
       p.transactions.push({
         id: Date.now().toString(), type: 'expense',
-        amount, currency: p.settings.expenseCurrency,
-        category: d.name, date,
+        amount, currency: abCurrency,
+        category: d.name, debtId: d.id, date,
         description: note || `Abono ${d.name}`
       });
       saveP(); closeModal(); renderDeudas();
@@ -1405,7 +1461,11 @@ function renderAhorros() {
         <div style="font-size:.78rem;color:var(--ts);margin-top:.2rem">Meta: ${fmtUSD(s.goalUSD)} · ${fmt(goalCOP)}</div>
         <div class="progress" style="margin-top:.7rem"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
         <div style="font-size:.72rem;color:var(--ts);margin-top:.3rem">${pct.toFixed(1)}% completado · Aporte mensual: ${fmtUSD(s.monthlyUSD)}</div>
-        <button onclick="addFunds('${s.id}')" style="margin-top:.8rem;width:100%;padding:.5rem;background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple);border-radius:var(--rs);cursor:pointer;font-size:.82rem;font-weight:500">+ Agregar fondos</button>
+        <div style="display:flex;gap:.5rem;margin-top:.8rem">
+          <button onclick="addFunds('${s.id}')" style="flex:1;padding:.5rem;background:var(--purple-bg);color:var(--purple);border:1px solid var(--purple);border-radius:var(--rs);cursor:pointer;font-size:.82rem;font-weight:500">+ Depositar</button>
+          <button onclick="retirarAhorro('${s.id}')" style="flex:1;padding:.5rem;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);border-radius:var(--rs);cursor:pointer;font-size:.82rem;font-weight:500">↩ Retirar</button>
+        </div>
+        <button onclick="verHistorialAhorro('${s.id}')" style="margin-top:.4rem;width:100%;padding:.35rem;background:none;color:var(--ts);border:1px solid var(--bl);border-radius:var(--rs);cursor:pointer;font-size:.75rem">📋 Ver historial</button>
       </div>
     </div>`;
   }).join('') + `<div class="card" style="border:2px dashed var(--bl);display:flex;align-items:center;justify-content:center;min-height:160px;cursor:pointer" onclick="openAddAhorro()">
@@ -1430,11 +1490,14 @@ function addFunds(id) {
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Guardar', cls: 'btn-primary', action: () => {
-      let amount = parseFloat(document.getElementById('af-amount').value) || 0;
+      const rawAmount = parseFloat(document.getElementById('af-amount').value) || 0;
+      if (!rawAmount || rawAmount <= 0) return alert('Ingresa un monto válido');
       const currency = document.getElementById('af-currency').value;
-      if (currency !== p.settings.expenseCurrency) amount = amount * p.settings.exchangeRate;
+      const amountCOP = toExpenseCurrency(rawAmount, currency);
       const prev = s.currentCOP;
-      s.currentCOP = (s.currentCOP || 0) + amount;
+      s.currentCOP = (s.currentCOP || 0) + amountCOP;
+      const note = document.getElementById('af-note').value.trim();
+      p.transactions.push({ id: Date.now().toString(), type: 'ahorro', amount: rawAmount, currency, category: s.name, savingId: id, date: new Date().toISOString().split('T')[0], description: note || `Depósito ${s.name}` });
       saveP(); closeModal(); renderAhorros();
       const goalCOP = s.goalUSD * p.settings.exchangeRate;
       if (prev < goalCOP && s.currentCOP >= goalCOP) showBear('¡Meta alcanzada!', `${s.name} completada 🎉`);
@@ -1490,7 +1553,7 @@ function editAhorro(id) {
       s.emoji = document.querySelector('#ea-emoji-picker .emoji-opt.selected')?.textContent || s.emoji || '🐷';
       s.goalUSD = parseFloat(document.getElementById('ea-goal').value) || s.goalUSD;
       s.monthlyUSD = parseFloat(document.getElementById('ea-monthly').value) || s.monthlyUSD;
-      s.currentCOP = parseFloat(document.getElementById('ea-current').value) || s.currentCOP;
+      const eaV = document.getElementById('ea-current').value; s.currentCOP = eaV !== '' ? (parseFloat(eaV) || 0) : s.currentCOP;
       saveP(); closeModal(); renderAhorros();
     }}
   ]);
@@ -1499,6 +1562,70 @@ function deleteAhorro(id) {
   if (!confirm('¿Eliminar esta meta?')) return;
   getP().savings = getP().savings.filter(s => s.id !== id);
   saveP(); closeModal(); renderAhorros();
+}
+
+function retirarAhorro(id) {
+  const p = getP();
+  const s = p.savings.find(x => x.id === id);
+  if (!s) return;
+  openModal(`↩ Retirar de ${s.name}`, `
+    <div style="background:var(--amber-bg);border-radius:var(--rs);padding:.6rem .8rem;margin-bottom:.8rem;font-size:.8rem;color:var(--amber)">
+      Saldo actual: <strong>${fmt(s.currentCOP)}</strong>. El monto retirado se suma al disponible como ingreso.
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Monto a retirar</label><input type="number" id="ret-amount" placeholder="0" min="0" max="${s.currentCOP}"></div>
+      <div class="form-group"><label>Moneda</label>
+        <select id="ret-currency">
+          <option value="${p.settings.expenseCurrency}">${p.settings.expenseCurrency}</option>
+          <option value="${p.settings.incomeCurrency}">${p.settings.incomeCurrency}</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Nota (opcional)</label><input type="text" id="ret-note" placeholder="ej: Usé para urgencia"></div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Retirar', cls: 'btn-primary', action: () => {
+      const rawAmount = parseFloat(document.getElementById('ret-amount').value) || 0;
+      if (!rawAmount || rawAmount <= 0) return alert('Ingresa un monto válido');
+      const currency = document.getElementById('ret-currency').value;
+      const amountCOP = toExpenseCurrency(rawAmount, currency);
+      if (amountCOP > s.currentCOP) return alert('No hay suficiente saldo en esta meta');
+      s.currentCOP = Math.max(0, s.currentCOP - amountCOP);
+      const note = document.getElementById('ret-note').value.trim();
+      p.transactions.push({
+        id: Date.now().toString(), type: 'income',
+        amount: rawAmount, currency,
+        category: 'Retiro de ahorro', savingId: id,
+        date: new Date().toISOString().split('T')[0],
+        description: note || `Retiro de ${s.name}`
+      });
+      saveP(); closeModal(); renderAhorros();
+      showBear('Retiro registrado', `${fmt(amountCOP)} vuelven a tu disponible 💰`);
+    }}
+  ]);
+}
+
+function verHistorialAhorro(id) {
+  const p = getP();
+  const s = p.savings.find(x => x.id === id);
+  if (!s) return;
+  const txs = p.transactions.filter(t => t.savingId === id).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const typeLabel = { ahorro: '⬆ Depósito', income: '⬇ Retiro' };
+  const typeColor = { ahorro: 'var(--green)', income: 'var(--amber)' };
+  openModal(`📋 Historial — ${s.name}`, `
+    <div style="font-size:.82rem;color:var(--ts);margin-bottom:.8rem">Total movimientos: ${txs.length}</div>
+    ${txs.length === 0 ? '<div style="text-align:center;color:var(--ts);padding:1rem">Sin movimientos aún</div>' :
+    `<div style="max-height:360px;overflow-y:auto">
+      <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Monto</th></tr></thead><tbody>
+        ${txs.map(t => `<tr>
+          <td style="color:var(--ts)">${dateStr(t.date)}</td>
+          <td>${t.description || '—'}</td>
+          <td style="color:${typeColor[t.type]||'var(--ts)'}">${typeLabel[t.type]||t.type}</td>
+          <td style="font-weight:500;color:${typeColor[t.type]||'var(--ts)'}">${fmt(t.amount, t.currency)}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`}
+  `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
 }
 
 // ===== GASTOS MENSUALES =====
@@ -1541,6 +1668,7 @@ function renderPresupuestos() {
                   ? `<button onclick="marcarGastoFijoPagado('${cat}')" style="width:100%;padding:.45rem;background:var(--green-bg);color:var(--green);border:1px solid var(--green);border-radius:var(--rs);cursor:pointer;font-size:.82rem;font-weight:500">✓ Marcar como pagado</button>`
                   : `<button onclick="editGastoFijo('${cat}')" style="width:100%;padding:.45rem;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);border-radius:var(--rs);cursor:pointer;font-size:.78rem">+ Definir monto fijo mensual</button>`
               }
+              <button onclick="verHistorialGasto('${cat}')" style="margin-top:.4rem;width:100%;padding:.35rem;background:none;color:var(--ts);border:1px solid var(--bl);border-radius:var(--rs);cursor:pointer;font-size:.75rem">📋 Historial de pagos</button>
             </div>
           </div>
         </div>`;
@@ -1614,6 +1742,25 @@ function marcarGastoFijoPagado(cat) {
   });
   saveP(); renderPresupuestos();
   showBear('¡Pago registrado!', `${cat} marcado como pagado ✓`);
+}
+
+function verHistorialGasto(cat) {
+  const p = getP();
+  const txs = p.transactions.filter(t => t.category === cat && t.type === 'expense').sort((a, b) => new Date(b.date) - new Date(a.date));
+  const total = txs.reduce((s, t) => s + toExpenseCurrency(t.amount, t.currency), 0);
+  openModal(`📋 Historial — ${cat}`, `
+    <div style="font-size:.82rem;color:var(--ts);margin-bottom:.8rem">Total histórico: <strong style="color:var(--red)">${fmt(total)}</strong> · ${txs.length} pagos</div>
+    ${txs.length === 0 ? '<div style="text-align:center;color:var(--ts);padding:1rem">Sin pagos registrados aún</div>' :
+    `<div style="max-height:360px;overflow-y:auto">
+      <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Monto</th></tr></thead><tbody>
+        ${txs.map(t => `<tr>
+          <td style="color:var(--ts)">${dateStr(t.date)}</td>
+          <td>${t.description || '—'}</td>
+          <td style="font-weight:500;color:var(--red)">${fmt(t.amount, t.currency)}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`}
+  `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
 }
 
 // ===== VIAJES =====
@@ -1898,6 +2045,228 @@ function deleteInversion(id) {
   if (!confirm('¿Eliminar esta inversión?')) return;
   getP().investments = getP().investments.filter(i => i.id !== id);
   saveP(); renderInversiones();
+}
+
+// ===== CUENTAS BANCARIAS =====
+function currencyOptions(selected) {
+  const p = getP();
+  const opts = [p.settings.expenseCurrency, p.settings.incomeCurrency, 'EUR', 'ARS', 'BRL', 'MXN'].filter((v,i,a)=>a.indexOf(v)===i);
+  return opts.map(c => `<option value="${c}" ${c===selected?'selected':''}>${c}</option>`).join('');
+}
+
+function cuentaSaldo(acc) {
+  const ingresos = (acc.history||[]).filter(h=>h.type==='ingreso').reduce((s,h)=>s+h.amount, 0);
+  const retiros  = (acc.history||[]).filter(h=>h.type==='retiro').reduce((s,h)=>s+h.amount, 0);
+  return ingresos - retiros;
+}
+
+function renderCuentas() {
+  const p = getP();
+  if (!p.bankAccounts) p.bankAccounts = [];
+  const typeLabel = { corriente:'Cuenta corriente', ahorros:'Cuenta de ahorros', virtual:'Billetera virtual', inversion:'Cuenta inversión', otro:'Otro' };
+  document.getElementById('cuentas-grid').innerHTML = p.bankAccounts.map(acc => {
+    const saldo = cuentaSaldo(acc);
+    const color = saldo >= 0 ? 'var(--green)' : 'var(--red)';
+    const ingresos = (acc.history||[]).filter(h=>h.type==='ingreso').reduce((s,h)=>s+h.amount,0);
+    const retiros  = (acc.history||[]).filter(h=>h.type==='retiro').reduce((s,h)=>s+h.amount,0);
+    return `<div class="card">
+      <div class="card-stripe" style="background:var(--purple)"></div>
+      <div style="margin-top:.3rem">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start">
+          <div>
+            <div style="font-weight:500;color:var(--tp)">${acc.name}</div>
+            <div style="font-size:.76rem;color:var(--ts)">${acc.bank || ''} · ${typeLabel[acc.type]||acc.type||''}</div>
+          </div>
+          <div style="display:flex;gap:.3rem">
+            <button onclick="editCuenta('${acc.id}')" style="background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.25rem .5rem;font-size:.72rem;cursor:pointer;color:var(--ts)">Editar</button>
+            <button onclick="deleteCuenta('${acc.id}')" style="background:none;border:1px solid var(--red);border-radius:var(--rs);padding:.25rem .4rem;font-size:.72rem;cursor:pointer;color:var(--red)">🗑</button>
+          </div>
+        </div>
+        <div style="font-size:1.3rem;font-weight:500;color:${color};margin:.5rem 0">${fmt(saldo, acc.currency)}</div>
+        <div style="display:flex;gap:1rem;font-size:.76rem;color:var(--ts)">
+          <span>⬆ Ingresos: <strong style="color:var(--green)">${fmt(ingresos, acc.currency)}</strong></span>
+          <span>⬇ Retiros: <strong style="color:var(--red)">${fmt(retiros, acc.currency)}</strong></span>
+        </div>
+        <div style="display:flex;gap:.5rem;margin-top:.8rem">
+          <button onclick="cuentaIngreso('${acc.id}')" style="flex:1;padding:.45rem;background:var(--green-bg);color:var(--green);border:1px solid var(--green);border-radius:var(--rs);cursor:pointer;font-size:.8rem;font-weight:500">+ Ingreso</button>
+          <button onclick="cuentaRetiro('${acc.id}')" style="flex:1;padding:.45rem;background:var(--red-bg);color:var(--red);border:1px solid var(--red);border-radius:var(--rs);cursor:pointer;font-size:.8rem;font-weight:500">− Retiro</button>
+        </div>
+        <button onclick="verHistorialCuenta('${acc.id}')" style="margin-top:.4rem;width:100%;padding:.35rem;background:none;color:var(--ts);border:1px solid var(--bl);border-radius:var(--rs);cursor:pointer;font-size:.75rem">📋 Ver historial</button>
+      </div>
+    </div>`;
+  }).join('') + `<div class="card" style="border:2px dashed var(--bl);display:flex;align-items:center;justify-content:center;min-height:160px;cursor:pointer" onclick="openAddCuenta()">
+    <div style="text-align:center;color:var(--ts)"><div style="font-size:1.5rem">🏦</div><div style="font-size:.82rem">Agregar cuenta</div></div>
+  </div>`;
+}
+
+function openAddCuenta() {
+  const p = getP();
+  openModal('Nueva cuenta bancaria', `
+    <div class="form-group"><label>Nombre de la cuenta</label><input type="text" id="ac-name" placeholder="ej: Cuenta Nómina"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Banco / Entidad</label><input type="text" id="ac-bank" placeholder="ej: Bancolombia, Nu, Rappi"></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="ac-type">
+          <option value="corriente">Cuenta corriente</option>
+          <option value="ahorros">Cuenta de ahorros</option>
+          <option value="virtual">Billetera virtual</option>
+          <option value="inversion">Cuenta inversión</option>
+          <option value="otro">Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>Moneda</label><select id="ac-currency">${currencyOptions(p.settings.expenseCurrency)}</select></div>
+      <div class="form-group"><label>Saldo inicial</label><input type="number" id="ac-init" placeholder="0" value="0"></div>
+    </div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Agregar', cls: 'btn-primary', action: () => {
+      const p = getP();
+      const name = document.getElementById('ac-name').value.trim();
+      if (!name) return alert('Ingresa el nombre de la cuenta');
+      if (!p.bankAccounts) p.bankAccounts = [];
+      const initAmount = parseFloat(document.getElementById('ac-init').value) || 0;
+      const currency = document.getElementById('ac-currency').value;
+      const acc = {
+        id: 'acc_' + Date.now(),
+        name,
+        bank: document.getElementById('ac-bank').value.trim(),
+        type: document.getElementById('ac-type').value,
+        currency,
+        history: []
+      };
+      if (initAmount > 0) acc.history.push({ id: 'h_' + Date.now(), type: 'ingreso', amount: initAmount, date: new Date().toISOString().split('T')[0], description: 'Saldo inicial' });
+      p.bankAccounts.push(acc);
+      saveP(); closeModal(); renderCuentas();
+    }}
+  ]);
+}
+
+function editCuenta(id) {
+  const p = getP();
+  const acc = p.bankAccounts.find(x => x.id === id);
+  if (!acc) return;
+  openModal(`Editar — ${acc.name}`, `
+    <div class="form-group"><label>Nombre</label><input type="text" id="ec-name" value="${acc.name}"></div>
+    <div class="form-row">
+      <div class="form-group"><label>Banco / Entidad</label><input type="text" id="ec-bank" value="${acc.bank||''}"></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="ec-type">
+          <option value="corriente" ${acc.type==='corriente'?'selected':''}>Cuenta corriente</option>
+          <option value="ahorros" ${acc.type==='ahorros'?'selected':''}>Cuenta de ahorros</option>
+          <option value="virtual" ${acc.type==='virtual'?'selected':''}>Billetera virtual</option>
+          <option value="inversion" ${acc.type==='inversion'?'selected':''}>Cuenta inversión</option>
+          <option value="otro" ${acc.type==='otro'?'selected':''}>Otro</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group"><label>Moneda</label><select id="ec-currency">${currencyOptions(acc.currency)}</select></div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Guardar', cls: 'btn-primary', action: () => {
+      acc.name = document.getElementById('ec-name').value.trim() || acc.name;
+      acc.bank = document.getElementById('ec-bank').value.trim();
+      acc.type = document.getElementById('ec-type').value;
+      acc.currency = document.getElementById('ec-currency').value;
+      saveP(); closeModal(); renderCuentas();
+    }}
+  ]);
+}
+
+function deleteCuenta(id) {
+  if (!confirm('¿Eliminar esta cuenta y todo su historial?')) return;
+  getP().bankAccounts = getP().bankAccounts.filter(a => a.id !== id);
+  saveP(); renderCuentas();
+}
+
+function cuentaIngreso(id) {
+  const p = getP();
+  const acc = p.bankAccounts.find(x => x.id === id);
+  openModal(`+ Ingreso — ${acc.name}`, `
+    <div class="form-row">
+      <div class="form-group"><label>Monto</label><input type="number" id="ci-amount" placeholder="0"></div>
+      <div class="form-group"><label>Moneda</label><select id="ci-currency">${currencyOptions(acc.currency)}</select></div>
+    </div>
+    <div class="form-group"><label>Fecha</label><input type="date" id="ci-date" value="${new Date().toISOString().split('T')[0]}"></div>
+    <div class="form-group"><label>Descripción</label><input type="text" id="ci-desc" placeholder="ej: Nómina junio"></div>
+    <label style="display:flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ts);margin-top:.6rem;cursor:pointer">
+      <input type="checkbox" id="ci-also-mv"> También registrar en Movimientos como ingreso
+    </label>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Registrar', cls: 'btn-primary', action: () => {
+      const amount = parseFloat(document.getElementById('ci-amount').value) || 0;
+      if (!amount || amount <= 0) return alert('Ingresa un monto válido');
+      const currency = document.getElementById('ci-currency').value;
+      const date = document.getElementById('ci-date').value;
+      const desc = document.getElementById('ci-desc').value.trim();
+      if (!acc.history) acc.history = [];
+      acc.history.push({ id: 'h_' + Date.now(), type: 'ingreso', amount, currency, date, description: desc || 'Ingreso' });
+      if (document.getElementById('ci-also-mv').checked) {
+        p.transactions.push({ id: Date.now().toString(), type: 'income', amount, currency, category: p.settings.incomeCategories[0], date, description: desc || `Ingreso ${acc.name}` });
+      }
+      saveP(); closeModal(); renderCuentas();
+    }}
+  ]);
+}
+
+function cuentaRetiro(id) {
+  const p = getP();
+  const acc = p.bankAccounts.find(x => x.id === id);
+  const saldo = cuentaSaldo(acc);
+  openModal(`− Retiro — ${acc.name}`, `
+    <div style="font-size:.82rem;color:var(--ts);margin-bottom:.8rem">Saldo disponible: <strong>${fmt(saldo, acc.currency)}</strong></div>
+    <div class="form-row">
+      <div class="form-group"><label>Monto</label><input type="number" id="cr-amount" placeholder="0"></div>
+      <div class="form-group"><label>Moneda</label><select id="cr-currency">${currencyOptions(acc.currency)}</select></div>
+    </div>
+    <div class="form-group"><label>Fecha</label><input type="date" id="cr-date" value="${new Date().toISOString().split('T')[0]}"></div>
+    <div class="form-group"><label>Descripción</label><input type="text" id="cr-desc" placeholder="ej: Pago arriendo"></div>
+    <label style="display:flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ts);margin-top:.6rem;cursor:pointer">
+      <input type="checkbox" id="cr-also-mv"> También registrar en Movimientos como gasto
+    </label>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Registrar', cls: 'btn-primary', action: () => {
+      const amount = parseFloat(document.getElementById('cr-amount').value) || 0;
+      if (!amount || amount <= 0) return alert('Ingresa un monto válido');
+      const currency = document.getElementById('cr-currency').value;
+      const date = document.getElementById('cr-date').value;
+      const desc = document.getElementById('cr-desc').value.trim();
+      if (!acc.history) acc.history = [];
+      acc.history.push({ id: 'h_' + Date.now(), type: 'retiro', amount, currency, date, description: desc || 'Retiro' });
+      if (document.getElementById('cr-also-mv').checked) {
+        p.transactions.push({ id: Date.now().toString(), type: 'expense', amount, currency, category: p.settings.expenseCategories[0], date, description: desc || `Retiro ${acc.name}` });
+      }
+      saveP(); closeModal(); renderCuentas();
+    }}
+  ]);
+}
+
+function verHistorialCuenta(id) {
+  const p = getP();
+  const acc = p.bankAccounts.find(x => x.id === id);
+  if (!acc) return;
+  const history = [...(acc.history||[])].sort((a,b) => new Date(b.date) - new Date(a.date));
+  const saldo = cuentaSaldo(acc);
+  openModal(`📋 Historial — ${acc.name}`, `
+    <div style="display:flex;gap:1.5rem;font-size:.82rem;color:var(--ts);margin-bottom:.8rem">
+      <span>Saldo: <strong style="color:${saldo>=0?'var(--green)':'var(--red)'}">${fmt(saldo, acc.currency)}</strong></span>
+      <span>Movimientos: <strong>${history.length}</strong></span>
+    </div>
+    ${history.length === 0 ? '<div style="text-align:center;color:var(--ts);padding:1rem">Sin movimientos aún</div>' :
+    `<div style="max-height:360px;overflow-y:auto">
+      <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Monto</th></tr></thead><tbody>
+        ${history.map(h => `<tr>
+          <td style="color:var(--ts)">${dateStr(h.date)}</td>
+          <td>${h.description || '—'}</td>
+          <td style="color:${h.type==='ingreso'?'var(--green)':'var(--red)'}">${h.type==='ingreso'?'⬆ Ingreso':'⬇ Retiro'}</td>
+          <td style="font-weight:500;color:${h.type==='ingreso'?'var(--green)':'var(--red)'}">${h.type==='ingreso'?'+':'−'}${fmt(h.amount, h.currency||acc.currency)}</td>
+        </tr>`).join('')}
+      </tbody></table>
+    </div>`}
+  `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
 }
 
 // ===== RECORDATORIOS =====

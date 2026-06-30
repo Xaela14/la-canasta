@@ -1233,6 +1233,24 @@ function toggleInstallment() {
   document.getElementById('mv-installment-fields').style.display = show ? 'block' : 'none';
 }
 
+function applyPaymentMethod(p, pm, amount, currency, date, description, txId) {
+  if (!pm) return;
+  const ts = 'h_' + Date.now();
+  if (pm === 'efectivo') {
+    if (!p.cash) p.cash = { history: [] };
+    p.cash.history.push({ id: 'ef_' + ts, type: 'gasto', amount, currency, date, description, txId });
+  } else if (pm.startsWith('cuenta_')) {
+    const acc = p.bankAccounts.find(a => a.id === pm.replace('cuenta_', ''));
+    if (acc) {
+      if (!acc.history) acc.history = [];
+      acc.history.push({ id: ts, type: 'retiro', amount, currency, date, description, txId, isExpenseLink: true });
+    }
+  } else if (pm.startsWith('deuda_')) {
+    const debt = p.debts.find(d => d.id === pm.replace('deuda_', ''));
+    if (debt) debt.balance = (debt.balance || 0) + amount;
+  }
+}
+
 function saveMovimiento() {
   const p = getP();
   const type = document.getElementById('mv-type').value;
@@ -1578,6 +1596,14 @@ function abonarDeuda(id) {
     <div class="form-group" style="margin-top:.7rem"><label>Fecha</label>
       <input type="date" id="ab-date" value="${new Date().toISOString().split('T')[0]}">
     </div>
+    <div class="form-group" style="margin-top:.7rem"><label>¿De dónde sale el dinero?</label>
+      <select id="ab-payment">
+        <option value="">No especificado</option>
+        <option value="efectivo">💵 Efectivo</option>
+        ${p.bankAccounts.map(a=>`<option value="cuenta_${a.id}">🏦 ${a.name}</option>`).join('')}
+        ${p.debts.filter(x=>x.isCredit&&x.id!==d.id).map(x=>`<option value="deuda_${x.id}">💳 ${x.name}</option>`).join('')}
+      </select>
+    </div>
     <div class="form-group" style="margin-top:.7rem"><label>Nota (opcional)</label>
       <input type="text" id="ab-note" placeholder="ej: Pago mínimo junio">
     </div>
@@ -1591,6 +1617,7 @@ function abonarDeuda(id) {
       if (!amount || amount <= 0) return alert('Ingresa un monto válido');
       const date = document.getElementById('ab-date').value;
       const note = document.getElementById('ab-note').value.trim();
+      const pm = document.getElementById('ab-payment')?.value || '';
       const prevBalance = d.balance || 0;
       d.balance = Math.max(0, prevBalance - amount);
       if (d.isCredit && d.totalDebt) d.totalDebt = Math.max(0, (d.totalDebt || 0) - amount);
@@ -1598,12 +1625,15 @@ function abonarDeuda(id) {
       if (!d.paidMonths) d.paidMonths = [];
       if (!d.paidMonths.includes(monthKey)) d.paidMonths.push(monthKey);
       const abCurrency = document.getElementById('ab-currency')?.value || p.settings.expenseCurrency;
+      const txId = Date.now().toString();
       p.transactions.push({
-        id: Date.now().toString(), type: 'expense',
+        id: txId, type: 'expense',
         amount, currency: abCurrency,
         category: d.name, debtId: d.id, date,
-        description: note || `Abono ${d.name}`
+        description: note || `Abono ${d.name}`,
+        ...(pm ? { paymentMethod: pm } : {})
       });
+      if (pm) applyPaymentMethod(p, pm, amount, abCurrency, date, note || `Abono ${d.name}`, txId);
       saveP(); closeModal(); renderDeudas();
       if (d.balance <= 0) showBear('¡Deuda saldada!', `${d.name} está en cero 🎉`);
       else showBear('¡Abono registrado!', `Saldo restante: ${fmt(d.balance)}`);
@@ -2026,6 +2056,14 @@ function marcarGastoFijoPagado(cat) {
       <div style="font-size:.75rem;color:var(--ts);margin-top:.3rem">Puedes adelantar meses futuros</div>
     </div>
     <div id="gf-total-display" style="margin-top:.7rem;padding:.5rem .7rem;background:var(--bg-card);border:1px solid var(--bl);border-radius:var(--rs)"></div>
+    <div class="form-group" style="margin-top:.7rem"><label>¿De dónde sale el dinero?</label>
+      <select id="gf-payment">
+        <option value="">No especificado</option>
+        <option value="efectivo">💵 Efectivo</option>
+        ${p.bankAccounts.map(a=>`<option value="cuenta_${a.id}">🏦 ${a.name}</option>`).join('')}
+        ${p.debts.filter(d=>d.isCredit).map(d=>`<option value="deuda_${d.id}">💳 ${d.name}</option>`).join('')}
+      </select>
+    </div>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Registrar pago', cls: 'btn-primary', action: () => {
@@ -2037,13 +2075,17 @@ function marcarGastoFijoPagado(cat) {
       const pending = getAllPendingMonths(budget, throughKey);
       if (pending.length === 0) { closeModal(); return; }
       const totalAmount = pending.length * budget.monthlyFixed;
+      const pm = document.getElementById('gf-payment')?.value || '';
+      const desc = pending.length > 1 ? `Gasto fijo: ${cat} (${pending.length} meses)` : `Gasto fijo: ${cat}`;
       if (!budget.paidMonths) budget.paidMonths = [];
       pending.forEach(mk => { if (!budget.paidMonths.includes(mk)) budget.paidMonths.push(mk); });
+      const txId = Date.now().toString();
       p.transactions.push({
-        id: Date.now().toString(), type: 'expense',
-        amount: totalAmount, currency: ec, category: cat, date,
-        description: pending.length > 1 ? `Gasto fijo: ${cat} (${pending.length} meses)` : `Gasto fijo: ${cat}`
+        id: txId, type: 'expense',
+        amount: totalAmount, currency: ec, category: cat, date, description: desc,
+        ...(pm ? { paymentMethod: pm } : {})
       });
+      if (pm) applyPaymentMethod(p, pm, totalAmount, ec, date, desc, txId);
       saveP(); closeModal(); renderPresupuestos();
       showBear('¡Pago registrado!', `${cat} al día ✓`);
     }}

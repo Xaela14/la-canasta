@@ -1854,7 +1854,35 @@ function renderPresupuestos() {
     </div>`;
 }
 
-function openAddPresupuesto() { editGastoFijo(getP().settings.expenseCategories[0]); }
+function openAddPresupuesto() {
+  const p = getP();
+  if (!p.settings.budgets) p.settings.budgets = [];
+  openModal('Nuevo gasto mensual', `
+    <div class="form-group"><label>Nombre de la categoría</label>
+      <input type="text" id="gf-name" placeholder="Ej: Arriendo, Servicios...">
+    </div>
+    <div class="form-group" style="margin-top:.7rem"><label>Monto fijo mensual (${p.settings.expenseCurrency})</label>
+      <input type="number" id="gf-fixed" placeholder="0">
+    </div>
+    <div class="form-group" style="margin-top:.7rem"><label>Límite de alerta (opcional)</label>
+      <input type="number" id="gf-limit" placeholder="0">
+      <div style="font-size:.75rem;color:var(--ts);margin-top:.3rem">La barra se pone roja cuando superas este límite</div>
+    </div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Guardar', cls: 'btn-primary', action: () => {
+      const name = document.getElementById('gf-name').value.trim();
+      if (!name) return alert('Escribe un nombre para la categoría');
+      const fixed = parseFloat(document.getElementById('gf-fixed').value) || 0;
+      const limit = parseFloat(document.getElementById('gf-limit').value) || 0;
+      if (!p.settings.expenseCategories.includes(name)) p.settings.expenseCategories.push(name);
+      const bidx = p.settings.budgets.findIndex(b => b.cat === name);
+      if (bidx >= 0) { p.settings.budgets[bidx].monthlyFixed = fixed; p.settings.budgets[bidx].limit = limit; }
+      else p.settings.budgets.push({ cat: name, monthlyFixed: fixed, limit, paidMonths: [] });
+      saveP(); closeModal(); renderPresupuestos();
+    }}
+  ]);
+}
 
 function editGastoFijo(cat) {
   const p = getP();

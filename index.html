@@ -1109,7 +1109,7 @@ function editMovimiento(id) {
     <option value="" ${!curPm ? 'selected' : ''}>No especificado</option>
     <option value="efectivo" ${curPm === 'efectivo' ? 'selected' : ''}>💵 Efectivo</option>
     ${p.bankAccounts.map(a => `<option value="cuenta_${a.id}" ${curPm === 'cuenta_'+a.id ? 'selected' : ''}>🏦 ${a.name}</option>`).join('')}
-    ${isExpense ? p.debts.filter(d => d.isCredit).map(d => `<option value="deuda_${d.id}" ${curPm === 'deuda_'+d.id ? 'selected' : ''}>💳 ${d.name}</option>`).join('') : ''}
+    ${isExpense ? p.debts.map(d => `<option value="deuda_${d.id}" ${curPm === 'deuda_'+d.id ? 'selected' : ''}>💳 ${d.name}</option>`).join('') : ''}
   `;
   openModal('Editar movimiento', `
     <div class="form-row">
@@ -1208,7 +1208,7 @@ function openAddMovimiento() {
         <option value="">No especificado</option>
         <option value="efectivo">💵 Efectivo</option>
         ${p.bankAccounts.map(a=>`<option value="cuenta_${a.id}">🏦 ${a.name}</option>`).join('')}
-        ${p.debts.filter(d=>d.isCredit).map(d=>`<option value="deuda_${d.id}">💳 ${d.name}</option>`).join('')}
+        ${p.debts.map(d=>`<option value="deuda_${d.id}">💳 ${d.name}</option>`).join('')}
       </select>
     </div>
     <div class="form-group" id="mv-income-account-box" style="display:none">
@@ -1448,7 +1448,12 @@ function renderDeudas() {
       <div class="card-stripe" style="background:${d.color}"></div>
       <div style="margin-top:.3rem;display:flex;justify-content:space-between;align-items:flex-start">
         <div>
-          <div style="font-weight:500;color:var(--tp);margin-bottom:.3rem">${d.name}</div>
+          <div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.3rem">
+            <span style="font-weight:500;color:var(--tp)">${d.name}</span>
+            <span style="font-size:.7rem;padding:.1rem .4rem;border-radius:99px;background:${d.isCredit?'var(--amber-bg)':'var(--purple-bg,#f0eaff)'};color:${d.isCredit?'var(--amber)':'var(--purple)'}">
+              ${d.isCredit ? 'Crédito' : '💳 Tarjeta'}
+            </span>
+          </div>
           <div style="font-size:1.2rem;font-weight:500;color:var(--red)">${fmt(bal)}</div>
           ${d.isCredit ? `<div style="font-size:.78rem;color:var(--ts)">Cuota mensual: ${fmt(d.monthlyPayment || 0)}${d.termMonths ? ` · Plazo: ${d.termMonths}m` : ''}</div>` :
             `<div style="font-size:.78rem;color:var(--ts)">Corte día ${d.cutDay || '?'} · Pago día ${d.payDay || '?'}</div>`}
@@ -1645,7 +1650,7 @@ function abonarDeuda(id) {
         <option value="">No especificado</option>
         <option value="efectivo">💵 Efectivo</option>
         ${p.bankAccounts.map(a=>`<option value="cuenta_${a.id}">🏦 ${a.name}</option>`).join('')}
-        ${p.debts.filter(x=>x.isCredit&&x.id!==d.id).map(x=>`<option value="deuda_${x.id}">💳 ${x.name}</option>`).join('')}
+        ${p.debts.filter(x=>x.id!==d.id).map(x=>`<option value="deuda_${x.id}">💳 ${x.name}</option>`).join('')}
       </select>
     </div>
     <div class="form-group" style="margin-top:.7rem"><label>Nota (opcional)</label>
@@ -2105,7 +2110,7 @@ function marcarGastoFijoPagado(cat) {
         <option value="">No especificado</option>
         <option value="efectivo">💵 Efectivo</option>
         ${p.bankAccounts.map(a=>`<option value="cuenta_${a.id}">🏦 ${a.name}</option>`).join('')}
-        ${p.debts.filter(d=>d.isCredit).map(d=>`<option value="deuda_${d.id}">💳 ${d.name}</option>`).join('')}
+        ${p.debts.map(d=>`<option value="deuda_${d.id}">💳 ${d.name}</option>`).join('')}
       </select>
     </div>
   `, [
@@ -2175,7 +2180,7 @@ function editPagoGastoFijo(txId) {
         <option value="" ${!curPm?'selected':''}>No especificado</option>
         <option value="efectivo" ${curPm==='efectivo'?'selected':''}>💵 Efectivo</option>
         ${p.bankAccounts.map(a=>`<option value="cuenta_${a.id}" ${curPm==='cuenta_'+a.id?'selected':''}>🏦 ${a.name}</option>`).join('')}
-        ${p.debts.filter(d=>d.isCredit).map(d=>`<option value="deuda_${d.id}" ${curPm==='deuda_'+d.id?'selected':''}>💳 ${d.name}</option>`).join('')}
+        ${p.debts.map(d=>`<option value="deuda_${d.id}" ${curPm==='deuda_'+d.id?'selected':''}>💳 ${d.name}</option>`).join('')}
       </select>
     </div>
   `, [

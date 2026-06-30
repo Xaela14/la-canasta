@@ -2392,11 +2392,235 @@ function verHistorialCuenta(id) {
           <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.description || '—'}</td>
           <td style="color:${h.type==='ingreso'?'var(--green)':'var(--red)'}">${h.type==='ingreso'?'⬆':'⬇'} ${h.type}</td>
           <td style="font-weight:500;color:${h.type==='ingreso'?'var(--green)':'var(--red)'}">${h.type==='ingreso'?'+':'−'}${fmt(h.amount, h.currency||acc.currency)}</td>
-          <td><button onclick="deleteCuentaMovimiento('${acc.id}','${h.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.85rem;padding:.1rem .3rem" title="Eliminar">✕</button></td>
+          <td style="white-space:nowrap">
+            <button onclick="editCuentaMovimiento('${acc.id}','${h.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.82rem;padding:.1rem .3rem" title="Editar">✏️</button>
+            <button onclick="deleteCuentaMovimiento('${acc.id}','${h.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.85rem;padding:.1rem .3rem" title="Eliminar">✕</button>
+          </td>
         </tr>`).join('')}
       </tbody></table>
     </div>`}
   `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
+}
+
+function editCuentaMovimiento(accId, histId) {
+  const p = getP();
+  const acc = p.bankAccounts.find(x => x.id === accId);
+  if (!acc) return;
+  const h = acc.history?.find(x => x.id === histId);
+  if (!h) return;
+  if (h.type === 'ingreso') editCuentaIngreso(accId, histId);
+  else editCuentaRetiro(accId, histId);
+}
+
+function setEiMode(mode, btn) {
+  document.querySelectorAll('#ei-mode-disp,#ei-mode-sav').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('ei-cat-box').style.display = mode === 'disponible' ? 'block' : 'none';
+  document.getElementById('ei-sav-box').style.display = mode === 'ahorro' ? 'block' : 'none';
+}
+
+function editCuentaIngreso(accId, histId) {
+  const p = getP();
+  const acc = p.bankAccounts.find(x => x.id === accId);
+  const h = acc.history.find(x => x.id === histId);
+  const hasSavings = p.savings.length > 0;
+  const isSav = !!h.isAhorro;
+  openModal(`✏️ Editar ingreso — ${acc.name}`, `
+    <div class="form-row">
+      <div class="form-group"><label>Monto</label><input type="number" id="ei-amount" value="${h.amount}" placeholder="0"></div>
+      <div class="form-group"><label>Moneda</label><select id="ei-currency">${currencyOptions(h.currency || acc.currency)}</select></div>
+    </div>
+    <div class="form-group"><label>Fecha</label><input type="date" id="ei-date" value="${h.date}"></div>
+    <div class="form-group"><label>Descripción</label><input type="text" id="ei-desc" value="${h.description || ''}"></div>
+    <div class="form-group" style="margin-top:.8rem">
+      <label style="font-size:.82rem;font-weight:500;color:var(--tp);margin-bottom:.5rem;display:block">¿Este dinero está disponible o es para ahorros?</label>
+      <div class="toggle-group">
+        <button class="toggle-btn${!isSav ? ' active' : ''}" id="ei-mode-disp" onclick="setEiMode('disponible',this)">💰 Disponible</button>
+        <button class="toggle-btn${isSav ? ' active' : ''}" id="ei-mode-sav" onclick="setEiMode('ahorro',this)">🐷 Solo ahorros</button>
+      </div>
+    </div>
+    <div id="ei-cat-box" style="${!isSav ? '' : 'display:none;'}margin-top:.6rem">
+      <div class="form-group"><label>Categoría de ingreso</label>
+        <select id="ei-category">${p.settings.incomeCategories.map(c => `<option${h.category === c ? ' selected' : ''}>${c}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div id="ei-sav-box" style="${isSav ? '' : 'display:none;'}margin-top:.6rem">
+      ${hasSavings
+        ? `<div class="form-group"><label>Meta de ahorro</label>
+            <select id="ei-saving-id">${p.savings.map(s => `<option value="${s.id}"${h.savingId === s.id ? ' selected' : ''}>${s.emoji || '🐷'} ${s.name}</option>`).join('')}</select>
+           </div>`
+        : `<div style="font-size:.82rem;color:var(--amber);background:var(--amber-bg);padding:.6rem .8rem;border-radius:var(--rs)">No tienes metas de ahorro creadas aún.</div>`
+      }
+    </div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: () => { closeModal(); verHistorialCuenta(accId); } },
+    { label: 'Guardar cambios', cls: 'btn-primary', action: () => {
+      const amount = parseFloat(document.getElementById('ei-amount').value);
+      if (!amount || amount <= 0) return alert('Ingresa un monto válido');
+      const currency = document.getElementById('ei-currency').value;
+      const date = document.getElementById('ei-date').value;
+      const desc = document.getElementById('ei-desc').value.trim();
+      const nowIsAhorro = document.getElementById('ei-mode-sav').classList.contains('active');
+      const p = getP();
+      const acc = p.bankAccounts.find(x => x.id === accId);
+      const h = acc.history.find(x => x.id === histId);
+      const oldAmountCOP = toExpenseCurrency(h.amount, h.currency || acc.currency);
+      // Revertir efecto anterior
+      if (h.isAhorro && h.savingId) {
+        const saving = p.savings.find(s => s.id === h.savingId);
+        if (saving) saving.currentCOP = Math.max(0, (saving.currentCOP || 0) - oldAmountCOP);
+      }
+      // Eliminar transacción antigua
+      if (h.txId) p.transactions = p.transactions.filter(t => t.id !== h.txId);
+      const newTs = Date.now().toString();
+      const newTxId = 'tx_' + newTs;
+      if (nowIsAhorro) {
+        const savingIdEl = document.getElementById('ei-saving-id');
+        if (!savingIdEl) return alert('Primero crea una meta de ahorro');
+        const savingId = savingIdEl.value;
+        const saving = p.savings.find(s => s.id === savingId);
+        if (!saving) return alert('Meta de ahorro no encontrada');
+        const newAmountCOP = toExpenseCurrency(amount, currency);
+        const prev = saving.currentCOP || 0;
+        saving.currentCOP = prev + newAmountCOP;
+        Object.assign(h, { amount, currency, date, description: desc || `Ahorro → ${saving.name}`, isAhorro: true, savingId, txId: newTxId });
+        p.transactions.push({ id: newTxId, type: 'ahorro', amount, currency, category: saving.name, savingId, date, description: desc || `Aporte ${saving.name} (${acc.name})`, bankAccountId: accId });
+        saveP(); closeModal(); renderCuentas();
+        const goalCOP = saving.goalUSD * p.settings.exchangeRate;
+        if (prev < goalCOP && saving.currentCOP >= goalCOP) setTimeout(() => showBear('¡Meta alcanzada!', `${saving.name} completada 🎉`), 200);
+      } else {
+        const category = document.getElementById('ei-category').value;
+        Object.assign(h, { amount, currency, date, description: desc || 'Ingreso', isAhorro: false, savingId: undefined, txId: newTxId });
+        p.transactions.push({ id: newTxId, type: 'income', amount, currency, category, date, description: desc || `Ingreso ${acc.name}`, bankAccountId: accId });
+        saveP(); closeModal(); renderCuentas();
+      }
+    }}
+  ]);
+}
+
+function setErMode(mode, btn) {
+  document.querySelectorAll('#er-mode-gasto,#er-mode-deuda,#er-mode-gfijo').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('er-gasto-box').style.display = mode === 'gasto' ? 'block' : 'none';
+  document.getElementById('er-deuda-box').style.display = mode === 'deuda' ? 'block' : 'none';
+  document.getElementById('er-gfijo-box').style.display = mode === 'gfijo' ? 'block' : 'none';
+}
+
+function editCuentaRetiro(accId, histId) {
+  const p = getP();
+  const acc = p.bankAccounts.find(x => x.id === accId);
+  const h = acc.history.find(x => x.id === histId);
+  const initMode = h.debtId ? 'deuda' : h.gastoFijoCat ? 'gfijo' : 'gasto';
+  const monthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
+  const unpaidGastos = (p.settings.expenseCategories || []).filter(cat => {
+    const b = p.settings.budgets?.find(b => b.cat === cat);
+    return b?.monthlyFixed > 0 && (!b.paidMonths?.includes(monthKey) || cat === h.gastoFijoCat);
+  });
+  openModal(`✏️ Editar retiro — ${acc.name}`, `
+    <div class="form-row">
+      <div class="form-group"><label>Monto</label><input type="number" id="er-amount" value="${h.amount}" placeholder="0"></div>
+      <div class="form-group"><label>Moneda</label><select id="er-currency">${currencyOptions(h.currency || acc.currency)}</select></div>
+    </div>
+    <div class="form-group"><label>Fecha</label><input type="date" id="er-date" value="${h.date}"></div>
+    <div class="form-group"><label>Descripción (opcional)</label><input type="text" id="er-desc" value="${h.description || ''}"></div>
+    <div class="form-group" style="margin-top:.8rem">
+      <label style="font-size:.82rem;font-weight:500;color:var(--tp);margin-bottom:.5rem;display:block">¿Para qué es este retiro?</label>
+      <div class="toggle-group">
+        <button class="toggle-btn${initMode === 'gasto' ? ' active' : ''}" id="er-mode-gasto" onclick="setErMode('gasto',this)">💸 Gasto</button>
+        <button class="toggle-btn${initMode === 'deuda' ? ' active' : ''}" id="er-mode-deuda" onclick="setErMode('deuda',this)">💳 Abono deuda</button>
+        <button class="toggle-btn${initMode === 'gfijo' ? ' active' : ''}" id="er-mode-gfijo" onclick="setErMode('gfijo',this)">📋 Gasto mensual</button>
+      </div>
+    </div>
+    <div id="er-gasto-box" style="${initMode === 'gasto' ? '' : 'display:none;'}margin-top:.6rem">
+      <div class="form-group"><label>Categoría</label>
+        <select id="er-category">${p.settings.expenseCategories.map(c => `<option>${c}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div id="er-deuda-box" style="${initMode === 'deuda' ? '' : 'display:none;'}margin-top:.6rem">
+      ${p.debts.length > 0
+        ? `<div class="form-group"><label>Deuda a abonar</label>
+            <select id="er-debt-id">${p.debts.map(d => `<option value="${d.id}"${h.debtId === d.id ? ' selected' : ''}>${d.name} — saldo ${fmt(d.balance || 0)}</option>`).join('')}</select>
+           </div>`
+        : `<div style="font-size:.8rem;color:var(--amber);background:var(--amber-bg);padding:.5rem .7rem;border-radius:var(--rs)">No tienes deudas registradas.</div>`
+      }
+    </div>
+    <div id="er-gfijo-box" style="${initMode === 'gfijo' ? '' : 'display:none;'}margin-top:.6rem">
+      ${unpaidGastos.length > 0
+        ? `<div class="form-group"><label>Gasto mensual</label>
+            <select id="er-gfijo-cat">${unpaidGastos.map(cat => {
+              const b = p.settings.budgets.find(b => b.cat === cat);
+              return `<option value="${cat}"${h.gastoFijoCat === cat ? ' selected' : ''}>${cat} — ${fmt(b.monthlyFixed)}</option>`;
+            }).join('')}</select>
+           </div>`
+        : `<div style="font-size:.8rem;color:var(--amber);background:var(--amber-bg);padding:.5rem .7rem;border-radius:var(--rs)">No hay gastos mensuales fijos disponibles.</div>`
+      }
+    </div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: () => { closeModal(); verHistorialCuenta(accId); } },
+    { label: 'Guardar cambios', cls: 'btn-primary', action: () => {
+      const amount = parseFloat(document.getElementById('er-amount').value);
+      if (!amount || amount <= 0) return alert('Ingresa un monto válido');
+      const currency = document.getElementById('er-currency').value;
+      const date = document.getElementById('er-date').value;
+      const desc = document.getElementById('er-desc').value.trim();
+      const mode = document.querySelector('#er-mode-gasto.active,#er-mode-deuda.active,#er-mode-gfijo.active')?.id;
+      const p = getP();
+      const acc = p.bankAccounts.find(x => x.id === accId);
+      const h = acc.history.find(x => x.id === histId);
+      const oldAmountCOP = toExpenseCurrency(h.amount, h.currency || acc.currency);
+      // Revertir efectos anteriores
+      if (h.debtId) {
+        const debt = p.debts.find(d => d.id === h.debtId);
+        if (debt) {
+          debt.balance = (debt.balance || 0) + oldAmountCOP;
+          if (debt.isCredit && debt.totalDebt !== undefined) debt.totalDebt = (debt.totalDebt || 0) + oldAmountCOP;
+          if (h.debtMonthKey && debt.paidMonths) debt.paidMonths = debt.paidMonths.filter(m => m !== h.debtMonthKey);
+        }
+      }
+      if (h.gastoFijoCat && h.gastoFijoMonthKey) {
+        const budget = p.settings.budgets?.find(b => b.cat === h.gastoFijoCat);
+        if (budget?.paidMonths) budget.paidMonths = budget.paidMonths.filter(m => m !== h.gastoFijoMonthKey);
+      }
+      // Eliminar transacción antigua
+      if (h.txId) p.transactions = p.transactions.filter(t => t.id !== h.txId);
+      // Limpiar metadata anterior del histEntry
+      delete h.debtId; delete h.debtMonthKey; delete h.gastoFijoCat; delete h.gastoFijoMonthKey;
+      const newTs = Date.now().toString();
+      const newTxId = 'tx_' + newTs;
+      // Aplicar nuevos efectos
+      if (mode === 'er-mode-deuda') {
+        const debtId = document.getElementById('er-debt-id')?.value;
+        const debt = p.debts.find(d => d.id === debtId);
+        if (!debt) return alert('Selecciona una deuda');
+        const newAmountCOP = toExpenseCurrency(amount, currency);
+        debt.balance = Math.max(0, (debt.balance || 0) - newAmountCOP);
+        if (debt.isCredit && debt.totalDebt) debt.totalDebt = Math.max(0, (debt.totalDebt || 0) - newAmountCOP);
+        const mk = `${new Date(date).getFullYear()}-${new Date(date).getMonth()}`;
+        if (!debt.paidMonths) debt.paidMonths = [];
+        if (!debt.paidMonths.includes(mk)) debt.paidMonths.push(mk);
+        Object.assign(h, { amount, currency, date, description: desc || `Abono ${debt.name}`, txId: newTxId, debtId: debt.id, debtMonthKey: mk });
+        p.transactions.push({ id: newTxId, type: 'expense', amount, currency, category: debt.name, debtId: debt.id, date, description: desc || `Abono ${debt.name}`, bankAccountId: accId });
+        saveP(); closeModal(); renderCuentas();
+        if (debt.balance <= 0) showBear('¡Deuda saldada!', `${debt.name} está en cero 🎉`);
+      } else if (mode === 'er-mode-gfijo') {
+        const cat = document.getElementById('er-gfijo-cat')?.value;
+        if (!cat) return alert('Selecciona un gasto mensual');
+        const budget = p.settings.budgets?.find(b => b.cat === cat);
+        if (!budget) return alert('Presupuesto no encontrado');
+        if (!budget.paidMonths) budget.paidMonths = [];
+        if (!budget.paidMonths.includes(monthKey)) budget.paidMonths.push(monthKey);
+        Object.assign(h, { amount, currency, date, description: desc || `Gasto fijo: ${cat}`, txId: newTxId, gastoFijoCat: cat, gastoFijoMonthKey: monthKey });
+        p.transactions.push({ id: newTxId, type: 'expense', amount, currency, category: cat, date, description: desc || `Gasto fijo: ${cat}`, bankAccountId: accId });
+        saveP(); closeModal(); renderCuentas();
+        showBear('¡Pago actualizado!', `${cat} marcado como pagado ✓`);
+      } else {
+        const category = document.getElementById('er-category')?.value || p.settings.expenseCategories[0];
+        Object.assign(h, { amount, currency, date, description: desc || 'Retiro', txId: newTxId });
+        p.transactions.push({ id: newTxId, type: 'expense', amount, currency, category, date, description: desc || `Retiro ${acc.name}`, bankAccountId: accId });
+        saveP(); closeModal(); renderCuentas();
+      }
+    }}
+  ]);
 }
 
 function deleteCuentaMovimiento(accId, histId) {

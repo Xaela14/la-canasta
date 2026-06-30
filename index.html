@@ -2746,6 +2746,7 @@ function editCuenta(id) {
   const p = getP();
   const acc = p.bankAccounts.find(x => x.id === id);
   if (!acc) return;
+  const saldoActual = cuentaSaldo(acc);
   openModal(`Editar — ${acc.name}`, `
     <div class="form-group"><label>Nombre</label><input type="text" id="ec-name" value="${acc.name}"></div>
     <div class="form-row">
@@ -2761,6 +2762,11 @@ function editCuenta(id) {
       </div>
     </div>
     <div class="form-group"><label>Moneda</label><select id="ec-currency">${currencyOptions(acc.currency)}</select></div>
+    <hr style="border:none;border-top:1px solid var(--bl);margin:.8rem 0">
+    <div class="form-group">
+      <label>Corregir saldo actual <span style="color:var(--ts);font-weight:400;font-size:.78rem">(actual: ${fmt(saldoActual, acc.currency)})</span></label>
+      <input type="number" id="ec-saldo" placeholder="Dejar vacío para no cambiar">
+    </div>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Guardar', cls: 'btn-primary', action: () => {
@@ -2768,6 +2774,28 @@ function editCuenta(id) {
       acc.bank = document.getElementById('ec-bank').value.trim();
       acc.type = document.getElementById('ec-type').value;
       acc.currency = document.getElementById('ec-currency').value;
+      const newSaldo = document.getElementById('ec-saldo').value;
+      if (newSaldo !== '' && !isNaN(parseFloat(newSaldo))) {
+        const target = parseFloat(newSaldo);
+        const current = cuentaSaldo(acc);
+        const diff = target - current;
+        if (Math.abs(diff) > 0.001) {
+          const initEntry = acc.history.find(h => h.description === 'Saldo inicial');
+          if (initEntry && acc.history.filter(h => h.type === 'ingreso' || h.type === 'retiro').length === 1) {
+            initEntry.amount = target > 0 ? target : 0;
+            initEntry.type = 'ingreso';
+          } else {
+            acc.history.push({
+              id: 'h_adj_' + Date.now(),
+              type: diff > 0 ? 'ingreso' : 'retiro',
+              amount: Math.abs(diff),
+              currency: acc.currency,
+              date: new Date().toISOString().split('T')[0],
+              description: 'Corrección de saldo'
+            });
+          }
+        }
+      }
       saveP(); closeModal(); renderCuentas();
     }}
   ]);

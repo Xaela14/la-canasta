@@ -1101,6 +1101,16 @@ function editMovimiento(id) {
   const p = getP();
   const t = p.transactions.find(x => x.id === id);
   if (!t) return;
+  const isIncome = t.type === 'income';
+  const isExpense = t.type === 'expense';
+  const pmLabel = isIncome ? '¿Dónde entró el dinero?' : '¿De dónde salió el dinero?';
+  const curPm = t.paymentMethod || '';
+  const pmOptions = `
+    <option value="" ${!curPm ? 'selected' : ''}>No especificado</option>
+    <option value="efectivo" ${curPm === 'efectivo' ? 'selected' : ''}>💵 Efectivo</option>
+    ${p.bankAccounts.map(a => `<option value="cuenta_${a.id}" ${curPm === 'cuenta_'+a.id ? 'selected' : ''}>🏦 ${a.name}</option>`).join('')}
+    ${isExpense ? p.debts.filter(d => d.isCredit).map(d => `<option value="deuda_${d.id}" ${curPm === 'deuda_'+d.id ? 'selected' : ''}>💳 ${d.name}</option>`).join('') : ''}
+  `;
   openModal('Editar movimiento', `
     <div class="form-row">
       <div class="form-group"><label>Fecha</label>
@@ -1108,7 +1118,7 @@ function editMovimiento(id) {
       </div>
       <div class="form-group"><label>Tipo</label>
         <select id="em-type" disabled style="opacity:.6">
-          <option value="${t.type}">${t.type === 'income' ? 'Ingreso' : t.type === 'expense' ? 'Gasto' : 'Ahorro'}</option>
+          <option value="${t.type}">${isIncome ? 'Ingreso' : t.type === 'expense' ? 'Gasto' : 'Ahorro'}</option>
         </select>
       </div>
     </div>
@@ -1130,6 +1140,10 @@ function editMovimiento(id) {
     <div class="form-group"><label>Categoría</label>
       <input type="text" id="em-cat" value="${t.category}">
     </div>
+    ${(isExpense || isIncome) ? `
+    <div class="form-group" style="margin-top:.4rem"><label>${pmLabel}</label>
+      <select id="em-payment">${pmOptions}</select>
+    </div>` : ''}
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Guardar', cls: 'btn-primary', action: () => {
@@ -1138,7 +1152,16 @@ function editMovimiento(id) {
       t.amount = parseFloat(document.getElementById('em-amount').value) || t.amount;
       t.currency = document.getElementById('em-currency').value;
       t.category = document.getElementById('em-cat').value.trim() || t.category;
-      saveP(); closeModal(); renderMovimientos();
+      const newPm = document.getElementById('em-payment')?.value || '';
+      if (newPm !== curPm) {
+        removePaymentFromHistory(p, t.id);
+        if (newPm) {
+          const dir = isIncome ? 'deposito' : 'gasto';
+          applyPaymentMethod(p, newPm, t.amount, t.currency, t.date, t.description || t.category, t.id, dir);
+        }
+        if (newPm) t.paymentMethod = newPm; else delete t.paymentMethod;
+      }
+      saveP(); closeModal(); renderMovimientos(); renderCuentas();
     }}
   ]);
 }
@@ -1188,6 +1211,14 @@ function openAddMovimiento() {
         ${p.debts.filter(d=>d.isCredit).map(d=>`<option value="deuda_${d.id}">💳 ${d.name}</option>`).join('')}
       </select>
     </div>
+    <div class="form-group" id="mv-income-account-box" style="display:none">
+      <label style="font-size:.82rem;font-weight:500;color:var(--tp)">¿Dónde guardar el dinero?</label>
+      <select id="mv-income-account">
+        <option value="">No especificado</option>
+        <option value="efectivo">💵 Efectivo</option>
+        ${p.bankAccounts.map(a=>`<option value="cuenta_${a.id}">🏦 ${a.name}</option>`).join('')}
+      </select>
+    </div>
     <div id="mv-installment-box">
       <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.85rem;color:var(--ts)">
         <input type="checkbox" id="mv-is-installment" onchange="toggleInstallment()">
@@ -1218,6 +1249,7 @@ function updateMvCategories() {
   document.getElementById('mv-saving-box').style.display = isAhorro ? 'block' : 'none';
   document.getElementById('mv-installment-box').style.display = isExpense ? 'block' : 'none';
   document.getElementById('mv-payment-box').style.display = isExpense ? 'block' : 'none';
+  document.getElementById('mv-income-account-box').style.display = type === 'income' ? 'block' : 'none';
   // Set currency default
   const cur = document.getElementById('mv-currency');
   if (isAhorro) cur.value = p.settings.incomeCurrency;
@@ -1233,22 +1265,29 @@ function toggleInstallment() {
   document.getElementById('mv-installment-fields').style.display = show ? 'block' : 'none';
 }
 
-function applyPaymentMethod(p, pm, amount, currency, date, description, txId) {
+function applyPaymentMethod(p, pm, amount, currency, date, description, txId, direction = 'gasto') {
   if (!pm) return;
   const ts = 'h_' + Date.now();
   if (pm === 'efectivo') {
     if (!p.cash) p.cash = { history: [] };
-    p.cash.history.push({ id: 'ef_' + ts, type: 'gasto', amount, currency, date, description, txId });
+    p.cash.history.push({ id: 'ef_' + ts, type: direction, amount, currency, date, description, txId });
   } else if (pm.startsWith('cuenta_')) {
     const acc = p.bankAccounts.find(a => a.id === pm.replace('cuenta_', ''));
     if (acc) {
       if (!acc.history) acc.history = [];
-      acc.history.push({ id: ts, type: 'retiro', amount, currency, date, description, txId, isExpenseLink: true });
+      acc.history.push({ id: ts, type: direction === 'deposito' ? 'deposito' : 'retiro', amount, currency, date, description, txId, isExpenseLink: direction !== 'deposito' });
     }
-  } else if (pm.startsWith('deuda_')) {
+  } else if (pm.startsWith('deuda_') && direction !== 'deposito') {
     const debt = p.debts.find(d => d.id === pm.replace('deuda_', ''));
     if (debt) debt.balance = (debt.balance || 0) + amount;
   }
+}
+
+function removePaymentFromHistory(p, txId) {
+  (p.bankAccounts || []).forEach(acc => {
+    if (acc.history) acc.history = acc.history.filter(h => h.txId !== txId);
+  });
+  if (p.cash?.history) p.cash.history = p.cash.history.filter(h => h.txId !== txId);
 }
 
 function saveMovimiento() {
@@ -1300,10 +1339,15 @@ function saveMovimiento() {
       });
     }
   } else {
-    const pm = (type === 'expense') ? (document.getElementById('mv-payment')?.value || '') : '';
+    const isIncome = type === 'income';
+    const pm = isIncome
+      ? (document.getElementById('mv-income-account')?.value || '')
+      : (type === 'expense' ? (document.getElementById('mv-payment')?.value || '') : '');
     const txId = Date.now().toString();
     p.transactions.push({ id: txId, type, amount, currency, category, date, description, ...(pm ? { paymentMethod: pm } : {}) });
-    if (pm) {
+    if (pm && isIncome) {
+      applyPaymentMethod(p, pm, amount, currency, date, description || category, txId, 'deposito');
+    } else if (pm) {
       const ts2 = Date.now().toString();
       if (pm === 'efectivo') {
         if (!p.cash) p.cash = { history: [] };
@@ -2097,19 +2141,56 @@ function verHistorialGasto(cat) {
   const p = getP();
   const txs = p.transactions.filter(t => t.category === cat && t.type === 'expense').sort((a, b) => new Date(b.date) - new Date(a.date));
   const total = txs.reduce((s, t) => s + toExpenseCurrency(t.amount, t.currency), 0);
+  const pmLabel = pm => pm === 'efectivo' ? '💵 Efectivo'
+    : pm?.startsWith('cuenta_') ? `🏦 ${p.bankAccounts.find(a=>a.id===pm.replace('cuenta_',''))?.name||'Cuenta'}`
+    : pm?.startsWith('deuda_')  ? `💳 ${p.debts.find(d=>d.id===pm.replace('deuda_',''))?.name||'Tarjeta'}`
+    : '<span style="color:var(--tm);font-size:.75rem">sin cuenta</span>';
   openModal(`📋 Historial — ${cat}`, `
     <div style="font-size:.82rem;color:var(--ts);margin-bottom:.8rem">Total histórico: <strong style="color:var(--red)">${fmt(total)}</strong> · ${txs.length} pagos</div>
     ${txs.length === 0 ? '<div style="text-align:center;color:var(--ts);padding:1rem">Sin pagos registrados aún</div>' :
     `<div style="max-height:360px;overflow-y:auto">
-      <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Monto</th></tr></thead><tbody>
+      <table class="data-table"><thead><tr><th>Fecha</th><th>Monto</th><th>Cuenta</th><th></th></tr></thead><tbody>
         ${txs.map(t => `<tr>
           <td style="color:var(--ts)">${dateStr(t.date)}</td>
-          <td>${t.description || '—'}</td>
           <td style="font-weight:500;color:var(--red)">${fmt(t.amount, t.currency)}</td>
+          <td style="font-size:.8rem">${pmLabel(t.paymentMethod)}</td>
+          <td><button onclick="editPagoGastoFijo('${t.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.85rem" title="Editar">✏️</button></td>
         </tr>`).join('')}
       </tbody></table>
     </div>`}
   `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
+}
+
+function editPagoGastoFijo(txId) {
+  const p = getP();
+  const t = p.transactions.find(x => x.id === txId);
+  if (!t) return;
+  const curPm = t.paymentMethod || '';
+  openModal('Editar fuente de pago', `
+    <div style="font-size:.85rem;color:var(--ts);margin-bottom:.8rem">
+      <strong>${t.category}</strong> · ${dateStr(t.date)} · ${fmt(t.amount, t.currency)}
+    </div>
+    <div class="form-group"><label>¿De dónde salió el dinero?</label>
+      <select id="epgf-payment">
+        <option value="" ${!curPm?'selected':''}>No especificado</option>
+        <option value="efectivo" ${curPm==='efectivo'?'selected':''}>💵 Efectivo</option>
+        ${p.bankAccounts.map(a=>`<option value="cuenta_${a.id}" ${curPm==='cuenta_'+a.id?'selected':''}>🏦 ${a.name}</option>`).join('')}
+        ${p.debts.filter(d=>d.isCredit).map(d=>`<option value="deuda_${d.id}" ${curPm==='deuda_'+d.id?'selected':''}>💳 ${d.name}</option>`).join('')}
+      </select>
+    </div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: () => { closeModal(); verHistorialGasto(t.category); } },
+    { label: 'Guardar', cls: 'btn-primary', action: () => {
+      const newPm = document.getElementById('epgf-payment')?.value || '';
+      if (newPm !== curPm) {
+        removePaymentFromHistory(p, t.id);
+        if (newPm) applyPaymentMethod(p, newPm, t.amount, t.currency, t.date, t.description || t.category, t.id);
+        if (newPm) t.paymentMethod = newPm; else delete t.paymentMethod;
+      }
+      saveP(); closeModal(); renderCuentas();
+      verHistorialGasto(t.category);
+    }}
+  ]);
 }
 
 // ===== VIAJES =====

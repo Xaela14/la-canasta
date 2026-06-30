@@ -1807,6 +1807,21 @@ function verHistorialAhorro(id) {
 }
 
 // ===== GASTOS MENSUALES =====
+function getBudgetOverdue(budget) {
+  if (!budget.startMonthKey || !budget.monthlyFixed) return { months: [], total: 0 };
+  const [sy, sm] = budget.startMonthKey.split('-').map(Number);
+  const now = new Date();
+  const curM = now.getMonth(), curY = now.getFullYear();
+  const overdue = [];
+  let y = sy, m = sm;
+  while (y < curY || (y === curY && m < curM)) {
+    const key = `${y}-${m}`;
+    if (!budget.paidMonths?.includes(key)) overdue.push(key);
+    m++; if (m > 11) { m = 0; y++; }
+  }
+  return { months: overdue, total: overdue.length * budget.monthlyFixed };
+}
+
 function renderPresupuestos() {
   const p = getP();
   const txs = thisMonthTxs().filter(t => t.type === 'expense');
@@ -1822,10 +1837,15 @@ function renderPresupuestos() {
         const limit = budget.limit || 0;
         const monthlyFixed = budget.monthlyFixed || 0;
         const paid = budget.paidMonths?.includes(monthKey) || false;
+        const overdue = getBudgetOverdue(budget);
         const pct = limit > 0 ? Math.min(100, (spent / limit) * 100) : monthlyFixed > 0 ? Math.min(100, (spent / monthlyFixed) * 100) : 0;
         const color = pct > 90 ? 'var(--red)' : pct > 70 ? 'var(--amber)' : 'var(--green)';
-        return `<div class="card" style="${paid ? 'border-color:var(--green)' : ''}">
-          <div class="card-stripe" style="background:${paid ? 'var(--green)' : 'var(--check)'}"></div>
+        const totalPending = monthlyFixed + overdue.total;
+        const overdueLabel = overdue.months.length > 0
+          ? `<div style="font-size:.78rem;background:var(--amber-bg);color:var(--amber);padding:.35rem .6rem;border-radius:var(--rs);margin-bottom:.5rem">⚠️ ${overdue.months.length} mes${overdue.months.length > 1 ? 'es' : ''} sin pagar — acumulado: <strong>${fmt(overdue.total)}</strong></div>`
+          : '';
+        return `<div class="card" style="${paid && overdue.months.length === 0 ? 'border-color:var(--green)' : overdue.months.length > 0 ? 'border-color:var(--amber)' : ''}">
+          <div class="card-stripe" style="background:${paid && overdue.months.length === 0 ? 'var(--green)' : overdue.months.length > 0 ? 'var(--amber)' : 'var(--check)'}"></div>
           <div style="margin-top:.3rem">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
               <div style="font-weight:500;font-size:.9rem;color:var(--tp)">${cat}</div>
@@ -1835,15 +1855,16 @@ function renderPresupuestos() {
               </div>
             </div>
             ${monthlyFixed > 0 ? `<div style="font-size:.82rem;color:var(--ts);margin-bottom:.3rem">Monto fijo: <strong style="color:var(--tp)">${fmt(monthlyFixed)}</strong></div>` : ''}
-            <div style="font-size:.85rem;color:var(--red);margin-bottom:.3rem">Gastado: ${fmt(spent)}</div>
+            <div style="font-size:.85rem;color:var(--red);margin-bottom:.3rem">Gastado este mes: ${fmt(spent)}</div>
             ${pct > 0 ? `
               <div class="progress"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
               <div style="font-size:.72rem;color:var(--ts);margin-top:.3rem">${pct.toFixed(0)}% ${limit > 0 ? 'del límite' : 'del monto fijo'}</div>` : ''}
             <div style="margin-top:.7rem">
-              ${paid
+              ${overdueLabel}
+              ${paid && overdue.months.length === 0
                 ? `<div style="color:var(--green);font-size:.82rem;font-weight:500">✓ Pagado este mes</div>`
                 : monthlyFixed > 0
-                  ? `<button onclick="marcarGastoFijoPagado('${cat}')" style="width:100%;padding:.45rem;background:var(--green-bg);color:var(--green);border:1px solid var(--green);border-radius:var(--rs);cursor:pointer;font-size:.82rem;font-weight:500">✓ Marcar como pagado</button>`
+                  ? `<button onclick="marcarGastoFijoPagado('${cat}')" style="width:100%;padding:.45rem;background:var(--green-bg);color:var(--green);border:1px solid var(--green);border-radius:var(--rs);cursor:pointer;font-size:.82rem;font-weight:500">✓ Pagar ${overdue.months.length > 0 ? fmt(totalPending) : fmt(monthlyFixed)}</button>`
                   : `<button onclick="editGastoFijo('${cat}')" style="width:100%;padding:.45rem;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);border-radius:var(--rs);cursor:pointer;font-size:.78rem">+ Definir monto fijo mensual</button>`
               }
               <button onclick="verHistorialGasto('${cat}')" style="margin-top:.4rem;width:100%;padding:.35rem;background:none;color:var(--ts);border:1px solid var(--bl);border-radius:var(--rs);cursor:pointer;font-size:.75rem">📋 Historial de pagos</button>
@@ -1876,9 +1897,15 @@ function openAddPresupuesto() {
       const fixed = parseFloat(document.getElementById('gf-fixed').value) || 0;
       const limit = parseFloat(document.getElementById('gf-limit').value) || 0;
       if (!p.settings.expenseCategories.includes(name)) p.settings.expenseCategories.push(name);
+      const curMK = `${new Date().getFullYear()}-${new Date().getMonth()}`;
       const bidx = p.settings.budgets.findIndex(b => b.cat === name);
-      if (bidx >= 0) { p.settings.budgets[bidx].monthlyFixed = fixed; p.settings.budgets[bidx].limit = limit; }
-      else p.settings.budgets.push({ cat: name, monthlyFixed: fixed, limit, paidMonths: [] });
+      if (bidx >= 0) {
+        p.settings.budgets[bidx].monthlyFixed = fixed;
+        p.settings.budgets[bidx].limit = limit;
+        if (fixed > 0 && !p.settings.budgets[bidx].startMonthKey) p.settings.budgets[bidx].startMonthKey = curMK;
+      } else {
+        p.settings.budgets.push({ cat: name, monthlyFixed: fixed, limit, paidMonths: [], startMonthKey: fixed > 0 ? curMK : null });
+      }
       saveP(); closeModal(); renderPresupuestos();
     }}
   ]);
@@ -1914,9 +1941,15 @@ function editGastoFijo(cat) {
         if (bidx >= 0) p.settings.budgets[bidx].cat = newName;
       }
       const finalCat = newName;
+      const curMK = `${new Date().getFullYear()}-${new Date().getMonth()}`;
       const bidx = p.settings.budgets.findIndex(b => b.cat === finalCat);
-      if (bidx >= 0) { p.settings.budgets[bidx].monthlyFixed = fixed; p.settings.budgets[bidx].limit = limit; }
-      else p.settings.budgets.push({ cat: finalCat, monthlyFixed: fixed, limit, paidMonths: [] });
+      if (bidx >= 0) {
+        p.settings.budgets[bidx].monthlyFixed = fixed;
+        p.settings.budgets[bidx].limit = limit;
+        if (fixed > 0 && !p.settings.budgets[bidx].startMonthKey) p.settings.budgets[bidx].startMonthKey = curMK;
+      } else {
+        p.settings.budgets.push({ cat: finalCat, monthlyFixed: fixed, limit, paidMonths: [], startMonthKey: fixed > 0 ? curMK : null });
+      }
       saveP(); closeModal(); renderPresupuestos();
     }}
   ]);
@@ -1935,19 +1968,47 @@ function marcarGastoFijoPagado(cat) {
   const p = getP();
   if (!p.settings.budgets) return;
   const budget = p.settings.budgets.find(b => b.cat === cat);
-  const amount = budget?.monthlyFixed || 0;
-  if (!amount) return alert('Primero define el monto fijo mensual para ' + cat);
-  const monthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
-  if (!budget.paidMonths) budget.paidMonths = [];
-  budget.paidMonths.push(monthKey);
-  p.transactions.push({
-    id: Date.now().toString(), type: 'expense',
-    amount, currency: p.settings.expenseCurrency,
-    category: cat, date: new Date().toISOString().split('T')[0],
-    description: `Gasto fijo: ${cat}`
-  });
-  saveP(); renderPresupuestos();
-  showBear('¡Pago registrado!', `${cat} marcado como pagado ✓`);
+  if (!budget?.monthlyFixed) return alert('Primero define el monto fijo mensual para ' + cat);
+  const curMonthKey = `${new Date().getFullYear()}-${new Date().getMonth()}`;
+  const overdue = getBudgetOverdue(budget);
+  const curPaid = budget.paidMonths?.includes(curMonthKey) || false;
+  const pendingMonths = overdue.months.length + (curPaid ? 0 : 1);
+  const totalAmount = budget.monthlyFixed * pendingMonths;
+  const ec = p.settings.expenseCurrency;
+
+  const overdueNote = overdue.months.length > 0
+    ? `<div style="font-size:.8rem;background:var(--amber-bg);color:var(--amber);padding:.5rem .7rem;border-radius:var(--rs);margin-bottom:.8rem">
+         ⚠️ Tienes <strong>${overdue.months.length} mes${overdue.months.length > 1 ? 'es' : ''} sin pagar</strong>. Se registrará el total acumulado.
+       </div>` : '';
+  const breakdown = overdue.months.length > 0
+    ? `<div style="font-size:.82rem;color:var(--ts)">Meses anteriores (${overdue.months.length}): <strong>${fmt(overdue.total, ec)}</strong></div>
+       ${curPaid ? '' : `<div style="font-size:.82rem;color:var(--ts)">Mes actual: <strong>${fmt(budget.monthlyFixed, ec)}</strong></div>`}`
+    : '';
+
+  openModal(`✓ Registrar pago — ${cat}`, `
+    ${overdueNote}
+    <div class="form-group"><label>Fecha de pago</label>
+      <input type="date" id="gf-pay-date" value="${new Date().toISOString().split('T')[0]}">
+    </div>
+    ${breakdown ? `<div style="margin-top:.8rem;padding:.6rem .8rem;background:var(--bg-card);border-radius:var(--rs);border:1px solid var(--bl)">${breakdown}
+      <div style="font-size:.95rem;font-weight:500;color:var(--red);margin-top:.4rem;border-top:1px solid var(--bl);padding-top:.4rem">Total: ${fmt(totalAmount, ec)}</div>
+    </div>` : `<div style="margin-top:.6rem;font-size:.9rem;color:var(--ts)">Monto: <strong style="color:var(--tp)">${fmt(totalAmount, ec)}</strong></div>`}
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Registrar pago', cls: 'btn-primary', action: () => {
+      const date = document.getElementById('gf-pay-date').value || new Date().toISOString().split('T')[0];
+      if (!budget.paidMonths) budget.paidMonths = [];
+      overdue.months.forEach(mk => { if (!budget.paidMonths.includes(mk)) budget.paidMonths.push(mk); });
+      if (!budget.paidMonths.includes(curMonthKey)) budget.paidMonths.push(curMonthKey);
+      p.transactions.push({
+        id: Date.now().toString(), type: 'expense',
+        amount: totalAmount, currency: ec, category: cat, date,
+        description: pendingMonths > 1 ? `Gasto fijo: ${cat} (${pendingMonths} meses)` : `Gasto fijo: ${cat}`
+      });
+      saveP(); closeModal(); renderPresupuestos();
+      showBear('¡Pago registrado!', `${cat} al día ✓`);
+    }}
+  ]);
 }
 
 function verHistorialGasto(cat) {

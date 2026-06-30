@@ -588,8 +588,8 @@ html,body{height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sa
 
 <script>
 // ===== SUPABASE =====
-const SUPA_URL = 'https://hsnjcepmyedflqamyikx.supabase.co';
-const SUPA_KEY = 'sb_publishable_0Bk2KprRxdl4TntIuyH7tw_HeyWJEbY';
+const SUPA_URL = 'https://hotcqumctxpwubidxkiw.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvdGNxdW1jdHhwd3ViaWR4a2l3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODIxNjQ3NjEsImV4cCI6MjA5Nzc0MDc2MX0.yK2fnNAQBInq6OydMAVC7aivc-7EeX2v28prgwmZhzI';
 const sb = supabase.createClient(SUPA_URL, SUPA_KEY);
 
 // ===== DATA LAYER =====
@@ -621,14 +621,14 @@ async function saveP() {
   saveAll();
   try {
     const { data: { user } } = await sb.auth.getUser();
-    if (user) await sb.from('profiles').upsert({ user_id: user.id, data: currentProfile }, { onConflict: 'user_id' });
+    if (user) await sb.from('canasta_profiles').upsert({ user_id: user.id, data: currentProfile }, { onConflict: 'user_id' });
   } catch(e) { console.warn('Sync error:', e); }
 }
 async function loadFromSupabase() {
   try {
     const { data: { user } } = await sb.auth.getUser();
     if (!user) return null;
-    const { data } = await sb.from('profiles').select('data').eq('user_id', user.id).single();
+    const { data } = await sb.from('canasta_profiles').select('data').eq('user_id', user.id).single();
     return data?.data || null;
   } catch(e) { return null; }
 }
@@ -3596,7 +3596,7 @@ async function authSignup() {
   profiles = [p];
   saveAll();
   try {
-    await sb.from('profiles').upsert({ user_id: data.user.id, data: p }, { onConflict: 'user_id' });
+    await sb.from('canasta_profiles').upsert({ user_id: data.user.id, data: p }, { onConflict: 'user_id' });
   } catch(e) {}
   okEl.textContent = '¡Cuenta creada! Revisa tu correo para confirmar (o entra directamente).';
   setTimeout(() => showPage('pg-app'), 1500);
@@ -3628,7 +3628,7 @@ async function afterLogin() {
       currentProfile = profiles[0];
       // migrate local data to Supabase
       const { data: { user } } = await sb.auth.getUser();
-      if (user) await sb.from('profiles').upsert({ user_id: user.id, data: currentProfile }, { onConflict: 'user_id' });
+      if (user) await sb.from('canasta_profiles').upsert({ user_id: user.id, data: currentProfile }, { onConflict: 'user_id' });
     } else {
       currentProfile = defaultProfile('Mi perfil', '🌸', 'USD', 'COP', 4150, '');
       profiles = [currentProfile];

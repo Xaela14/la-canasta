@@ -2237,6 +2237,7 @@ function cuentaIngreso(id) {
       const desc = document.getElementById('ci-desc').value.trim();
       const isAhorro = document.getElementById('ci-mode-sav').classList.contains('active');
       if (!acc.history) acc.history = [];
+      const ciTs = Date.now().toString(); const ciTxId = 'tx_' + ciTs;
       if (isAhorro) {
         const savingIdEl = document.getElementById('ci-saving-id');
         if (!savingIdEl) return alert('Primero crea una meta de ahorro');
@@ -2246,15 +2247,15 @@ function cuentaIngreso(id) {
         const amountCOP = toExpenseCurrency(amount, currency);
         const prev = saving.currentCOP || 0;
         saving.currentCOP = prev + amountCOP;
-        acc.history.push({ id: 'h_' + Date.now(), type: 'ingreso', amount, currency, date, description: desc || `Ahorro → ${saving.name}`, isAhorro: true, savingId });
-        p.transactions.push({ id: Date.now().toString(), type: 'ahorro', amount, currency, category: saving.name, savingId, date, description: desc || `Aporte ${saving.name} (${acc.name})`, bankAccountId: id });
+        acc.history.push({ id: 'h_' + ciTs, type: 'ingreso', amount, currency, date, description: desc || `Ahorro → ${saving.name}`, isAhorro: true, savingId, txId: ciTxId });
+        p.transactions.push({ id: ciTxId, type: 'ahorro', amount, currency, category: saving.name, savingId, date, description: desc || `Aporte ${saving.name} (${acc.name})`, bankAccountId: id });
         saveP(); closeModal(); renderCuentas();
         const goalCOP = saving.goalUSD * p.settings.exchangeRate;
         if (prev < goalCOP && saving.currentCOP >= goalCOP) setTimeout(() => showBear('¡Meta alcanzada!', `${saving.name} completada 🎉`), 200);
       } else {
         const category = document.getElementById('ci-category').value;
-        acc.history.push({ id: 'h_' + Date.now(), type: 'ingreso', amount, currency, date, description: desc || 'Ingreso' });
-        p.transactions.push({ id: Date.now().toString(), type: 'income', amount, currency, category, date, description: desc || `Ingreso ${acc.name}`, bankAccountId: id });
+        acc.history.push({ id: 'h_' + ciTs, type: 'ingreso', amount, currency, date, description: desc || 'Ingreso', txId: ciTxId });
+        p.transactions.push({ id: ciTxId, type: 'income', amount, currency, category, date, description: desc || `Ingreso ${acc.name}`, bankAccountId: id });
         saveP(); closeModal(); renderCuentas();
       }
     }}
@@ -2328,7 +2329,8 @@ function cuentaRetiro(id) {
       const desc = document.getElementById('cr-desc').value.trim();
       const mode = document.querySelector('#cr-mode-gasto.active,#cr-mode-deuda.active,#cr-mode-gfijo.active')?.id;
       if (!acc.history) acc.history = [];
-      acc.history.push({ id: 'h_' + Date.now(), type: 'retiro', amount, currency, date, description: desc || 'Retiro' });
+      const crTs = Date.now().toString(); const crTxId = 'tx_' + crTs;
+      const histEntry = { id: 'h_' + crTs, type: 'retiro', amount, currency, date, description: desc || 'Retiro', txId: crTxId };
 
       if (mode === 'cr-mode-deuda') {
         const debtId = document.getElementById('cr-debt-id')?.value;
@@ -2341,7 +2343,9 @@ function cuentaRetiro(id) {
         const mk = `${new Date(date).getFullYear()}-${new Date(date).getMonth()}`;
         if (!debt.paidMonths) debt.paidMonths = [];
         if (!debt.paidMonths.includes(mk)) debt.paidMonths.push(mk);
-        p.transactions.push({ id: Date.now().toString(), type: 'expense', amount, currency, category: debt.name, debtId: debt.id, date, description: desc || `Abono ${debt.name}`, bankAccountId: id });
+        histEntry.debtId = debt.id; histEntry.debtMonthKey = mk;
+        acc.history.push(histEntry);
+        p.transactions.push({ id: crTxId, type: 'expense', amount, currency, category: debt.name, debtId: debt.id, date, description: desc || `Abono ${debt.name}`, bankAccountId: id });
         saveP(); closeModal(); renderCuentas();
         if (debt.balance <= 0) showBear('¡Deuda saldada!', `${debt.name} está en cero 🎉`);
         else showBear('¡Abono registrado!', `Saldo restante: ${fmt(debt.balance)}`);
@@ -2353,13 +2357,16 @@ function cuentaRetiro(id) {
         if (!budget) return alert('Presupuesto no encontrado');
         if (!budget.paidMonths) budget.paidMonths = [];
         if (!budget.paidMonths.includes(monthKey)) budget.paidMonths.push(monthKey);
-        p.transactions.push({ id: Date.now().toString(), type: 'expense', amount, currency, category: cat, date, description: desc || `Gasto fijo: ${cat}`, bankAccountId: id });
+        histEntry.gastoFijoCat = cat; histEntry.gastoFijoMonthKey = monthKey;
+        acc.history.push(histEntry);
+        p.transactions.push({ id: crTxId, type: 'expense', amount, currency, category: cat, date, description: desc || `Gasto fijo: ${cat}`, bankAccountId: id });
         saveP(); closeModal(); renderCuentas();
         showBear('¡Pago registrado!', `${cat} marcado como pagado ✓`);
 
       } else {
         const category = document.getElementById('cr-category')?.value || p.settings.expenseCategories[0];
-        p.transactions.push({ id: Date.now().toString(), type: 'expense', amount, currency, category, date, description: desc || `Retiro ${acc.name}`, bankAccountId: id });
+        acc.history.push(histEntry);
+        p.transactions.push({ id: crTxId, type: 'expense', amount, currency, category, date, description: desc || `Retiro ${acc.name}`, bankAccountId: id });
         saveP(); closeModal(); renderCuentas();
       }
     }}
@@ -2379,16 +2386,67 @@ function verHistorialCuenta(id) {
     </div>
     ${history.length === 0 ? '<div style="text-align:center;color:var(--ts);padding:1rem">Sin movimientos aún</div>' :
     `<div style="max-height:360px;overflow-y:auto">
-      <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Monto</th></tr></thead><tbody>
+      <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Monto</th><th></th></tr></thead><tbody>
         ${history.map(h => `<tr>
           <td style="color:var(--ts)">${dateStr(h.date)}</td>
-          <td>${h.description || '—'}</td>
-          <td style="color:${h.type==='ingreso'?'var(--green)':'var(--red)'}">${h.type==='ingreso'?'⬆ Ingreso':'⬇ Retiro'}</td>
+          <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.description || '—'}</td>
+          <td style="color:${h.type==='ingreso'?'var(--green)':'var(--red)'}">${h.type==='ingreso'?'⬆':'⬇'} ${h.type}</td>
           <td style="font-weight:500;color:${h.type==='ingreso'?'var(--green)':'var(--red)'}">${h.type==='ingreso'?'+':'−'}${fmt(h.amount, h.currency||acc.currency)}</td>
+          <td><button onclick="deleteCuentaMovimiento('${acc.id}','${h.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.85rem;padding:.1rem .3rem" title="Eliminar">✕</button></td>
         </tr>`).join('')}
       </tbody></table>
     </div>`}
   `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
+}
+
+function deleteCuentaMovimiento(accId, histId) {
+  if (!confirm('¿Eliminar este movimiento? Los efectos en saldos, deudas o ahorros se revertirán automáticamente.')) return;
+  const p = getP();
+  const acc = p.bankAccounts.find(x => x.id === accId);
+  if (!acc) return;
+  const h = acc.history?.find(x => x.id === histId);
+  if (!h) return;
+
+  const amountCOP = toExpenseCurrency(h.amount, h.currency || acc.currency);
+
+  // Revertir según tipo
+  if (h.type === 'ingreso') {
+    if (h.isAhorro && h.savingId) {
+      const saving = p.savings.find(s => s.id === h.savingId);
+      if (saving) saving.currentCOP = Math.max(0, (saving.currentCOP || 0) - amountCOP);
+    }
+    // Si era ingreso normal no hay nada extra que revertir — solo desaparece de movimientos
+  }
+
+  if (h.type === 'retiro') {
+    if (h.debtId) {
+      const debt = p.debts.find(d => d.id === h.debtId);
+      if (debt) {
+        debt.balance = (debt.balance || 0) + amountCOP;
+        if (debt.isCredit && debt.totalDebt !== undefined) debt.totalDebt = (debt.totalDebt || 0) + amountCOP;
+        // Quitar el mes de paidMonths si aplica
+        if (h.debtMonthKey && debt.paidMonths) debt.paidMonths = debt.paidMonths.filter(m => m !== h.debtMonthKey);
+      }
+    }
+    if (h.gastoFijoCat && h.gastoFijoMonthKey) {
+      const budget = p.settings.budgets?.find(b => b.cat === h.gastoFijoCat);
+      if (budget?.paidMonths) budget.paidMonths = budget.paidMonths.filter(m => m !== h.gastoFijoMonthKey);
+    }
+  }
+
+  // Eliminar transacción vinculada en movimientos
+  if (h.txId) {
+    p.transactions = p.transactions.filter(t => t.id !== h.txId);
+  } else {
+    // Fallback para entradas antiguas sin txId
+    const idx = p.transactions.findIndex(t => t.bankAccountId === accId && t.date === h.date && Math.abs(t.amount - h.amount) < 0.01);
+    if (idx >= 0) p.transactions.splice(idx, 1);
+  }
+
+  acc.history = acc.history.filter(x => x.id !== histId);
+  saveP();
+  closeModal();
+  renderCuentas();
 }
 
 // ===== RECORDATORIOS =====

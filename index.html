@@ -1898,7 +1898,8 @@ function renderPresupuestos() {
             <div style="margin-top:.7rem">
               ${overdueLabel}
               ${paid && overdue.months.length === 0
-                ? `<div style="color:var(--green);font-size:.82rem;font-weight:500">✓ Pagado este mes</div>`
+                ? `<div style="color:var(--green);font-size:.82rem;font-weight:500">✓ Pagado este mes</div>
+                   <button onclick="marcarGastoFijoPagado('${cat}')" style="margin-top:.4rem;width:100%;padding:.35rem;background:none;color:var(--purple);border:1px solid var(--purple);border-radius:var(--rs);cursor:pointer;font-size:.75rem">+ Adelantar pago</button>`
                 : monthlyFixed > 0
                   ? `<button onclick="marcarGastoFijoPagado('${cat}')" style="width:100%;padding:.45rem;background:var(--green-bg);color:var(--green);border:1px solid var(--green);border-radius:var(--rs);cursor:pointer;font-size:.82rem;font-weight:500">✓ Pagar ${overdue.months.length > 0 ? fmt(totalPending) : fmt(monthlyFixed)}</button>`
                   : `<button onclick="editGastoFijo('${cat}')" style="width:100%;padding:.45rem;background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber);border-radius:var(--rs);cursor:pointer;font-size:.78rem">+ Definir monto fijo mensual</button>`
@@ -3462,7 +3463,7 @@ function openModal(title, body, buttons) {
   document.getElementById('modal-footer').innerHTML = buttons.map((b, i) =>
     `<button class="btn ${b.cls}" id="mbtn-${i}">${b.label}</button>`
   ).join('');
-  buttons.forEach((b, i) => { document.getElementById('mbtn-'+i).onclick = b.action; });
+  buttons.forEach((b, i) => { document.getElementById('mbtn-'+i).onclick = () => b.action(); });
   document.getElementById('modal-overlay').classList.add('open');
 }
 function closeModal(e) {

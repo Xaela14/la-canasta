@@ -665,7 +665,7 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   if (id === 'pg-profiles') renderProfileSelector();
-  if (id === 'pg-app') { updateSidebarInfo(); migrateRetiroAhorros(); nav('dashboard'); }
+  if (id === 'pg-app') { updateSidebarInfo(); migrateRetiroAhorros(); nav('dashboard'); checkAndUpdateRates(); }
 }
 
 // ===== PROFILE SELECTOR =====
@@ -825,10 +825,46 @@ function fmt(amount, currency) {
   return new Intl.NumberFormat('es-CO', { style: 'currency', currency, maximumFractionDigits: currency === 'COP' ? 0 : 2 }).format(amount || 0);
 }
 function fmtUSD(amount) { return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(amount || 0); }
+async function updateExchangeRates(silent = true) {
+  const p = getP();
+  if (!p) return;
+  try {
+    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    const data = await res.json();
+    if (data.result === 'success' && data.rates) {
+      p.settings.exchangeRates = data.rates;
+      p.settings.exchangeRatesUpdated = new Date().toISOString();
+      // Keep old single rate in sync (USD→expenseCurrency)
+      const expCur = p.settings.expenseCurrency;
+      if (data.rates[expCur]) p.settings.exchangeRate = data.rates[expCur];
+      saveP();
+      if (!silent) { renderAjustes(); alert('✅ Tasas de cambio actualizadas correctamente.'); }
+    }
+  } catch(e) {
+    if (!silent) alert('No se pudo conectar para actualizar las tasas. Intenta de nuevo más tarde.');
+  }
+}
+
+function checkAndUpdateRates() {
+  const p = getP();
+  if (!p) return;
+  const last = p.settings.exchangeRatesUpdated;
+  const stale = !last || (Date.now() - new Date(last).getTime()) > 24 * 60 * 60 * 1000;
+  if (stale) updateExchangeRates(true);
+}
+
 function toExpenseCurrency(amount, fromCurrency) {
   const p = currentProfile;
   if (!p) return amount;
-  if (fromCurrency === p.settings.expenseCurrency) return amount;
+  const expCur = p.settings.expenseCurrency;
+  if (!fromCurrency || fromCurrency === expCur) return amount;
+  const rates = p.settings.exchangeRates;
+  if (rates && rates['USD']) {
+    // rates are USD-based: convert fromCurrency → USD → expCur
+    if (fromCurrency === 'USD') return amount * (rates[expCur] || p.settings.exchangeRate);
+    if (rates[fromCurrency] && rates[expCur]) return (amount / rates[fromCurrency]) * rates[expCur];
+  }
+  // Fallback: old single rate
   if (fromCurrency === p.settings.incomeCurrency) return amount * p.settings.exchangeRate;
   return amount;
 }
@@ -2493,6 +2529,10 @@ function toAccCurrency(amount, fromCur, toCur) {
   if (!fromCur || !toCur || fromCur === toCur) return amount;
   const p = currentProfile;
   if (!p) return amount;
+  const rates = p.settings.exchangeRates;
+  if (rates && rates['USD'] && rates[fromCur] && rates[toCur]) {
+    return (amount / rates[fromCur]) * rates[toCur];
+  }
   const cop = toExpenseCurrency(amount, fromCur);
   return toCur === p.settings.incomeCurrency ? cop / (p.settings.exchangeRate || 1) : cop;
 }
@@ -3469,11 +3509,23 @@ function renderAjustes() {
       <div class="card">
         <div class="card-stripe"></div>
         <div style="margin-top:.3rem">
-          <div style="font-weight:500;margin-bottom:.8rem">💱 Tasa de cambio</div>
-          <div style="font-size:.88rem;color:var(--ts);margin-bottom:.6rem">1 ${p.settings.incomeCurrency} = ${fmt(p.settings.exchangeRate)} ${p.settings.expenseCurrency}</div>
-          <button class="btn btn-secondary" onclick="openRateModal()">Actualizar tasa</button>
+          <div style="font-weight:500;margin-bottom:.8rem">💱 Tasas de cambio</div>
+          ${p.settings.exchangeRatesUpdated
+            ? `<div style="font-size:.78rem;color:var(--ts);margin-bottom:.6rem">Última actualización: ${new Date(p.settings.exchangeRatesUpdated).toLocaleString('es-CO',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})} · Se actualizan solos cada 24h</div>`
+            : `<div style="font-size:.78rem;color:var(--amber);margin-bottom:.6rem">⚠️ Tasas no cargadas aún. Abre la app con internet.</div>`}
+          ${p.settings.exchangeRates ? `
+          <div style="display:flex;flex-wrap:wrap;gap:.4rem;margin-bottom:.8rem">
+            ${['USD','EUR','GBP','ARS','BRL','MXN','COP','CNY','JPY','CAD'].filter(c=>c!==p.settings.expenseCurrency&&p.settings.exchangeRates[c]).map(c=>`
+              <span style="font-size:.78rem;background:var(--bg-card);border:1px solid var(--bl);border-radius:6px;padding:.2rem .5rem">
+                1 ${c} = ${fmt((p.settings.exchangeRates[p.settings.expenseCurrency]||1)/p.settings.exchangeRates[c])} ${p.settings.expenseCurrency}
+              </span>`).join('')}
+          </div>` : ''}
+          <div style="display:flex;gap:.5rem;flex-wrap:wrap">
+            <button class="btn btn-secondary" onclick="updateExchangeRates(false)">🔄 Actualizar ahora</button>
+            <button class="btn btn-secondary" onclick="openRateModal()">Editar tasa manual</button>
+          </div>
           <div style="margin-top:.8rem">
-            <div style="font-size:.78rem;color:var(--ts);margin-bottom:.4rem">Historial reciente</div>
+            <div style="font-size:.78rem;color:var(--ts);margin-bottom:.4rem">Historial manual</div>
             ${(p.settings.exchangeHistory||[]).slice(-5).reverse().map(h=>`<div style="font-size:.8rem;display:flex;justify-content:space-between;padding:.3rem 0;border-bottom:.5px dashed var(--bl)"><span style="color:var(--ts)">${h.date}</span><span style="font-weight:500">${fmt(h.rate)}</span></div>`).join('')}
           </div>
         </div>

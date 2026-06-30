@@ -1275,7 +1275,7 @@ function applyPaymentMethod(p, pm, amount, currency, date, description, txId, di
     const acc = p.bankAccounts.find(a => a.id === pm.replace('cuenta_', ''));
     if (acc) {
       if (!acc.history) acc.history = [];
-      acc.history.push({ id: ts, type: direction === 'deposito' ? 'deposito' : 'retiro', amount, currency, date, description, txId, isExpenseLink: direction !== 'deposito' });
+      acc.history.push({ id: ts, type: direction === 'deposito' ? 'ingreso' : 'retiro', amount, currency, date, description, txId, isExpenseLink: direction !== 'deposito' });
     }
   } else if (pm.startsWith('deuda_') && direction !== 'deposito') {
     const debt = p.debts.find(d => d.id === pm.replace('deuda_', ''));
@@ -2484,9 +2484,17 @@ function currencyOptions(selected) {
   return opts.map(c => `<option value="${c}" ${c===selected?'selected':''}>${c}</option>`).join('');
 }
 
+function toAccCurrency(amount, fromCur, toCur) {
+  if (!fromCur || !toCur || fromCur === toCur) return amount;
+  const p = currentProfile;
+  if (!p) return amount;
+  const cop = toExpenseCurrency(amount, fromCur);
+  return toCur === p.settings.incomeCurrency ? cop / (p.settings.exchangeRate || 1) : cop;
+}
 function cuentaSaldo(acc) {
-  const ingresos = (acc.history||[]).filter(h=>h.type==='ingreso').reduce((s,h)=>s+h.amount, 0);
-  const retiros  = (acc.history||[]).filter(h=>h.type==='retiro').reduce((s,h)=>s+h.amount, 0);
+  const cur = acc.currency;
+  const ingresos = (acc.history||[]).filter(h=>h.type==='ingreso').reduce((s,h)=>s+toAccCurrency(h.amount,h.currency,cur), 0);
+  const retiros  = (acc.history||[]).filter(h=>h.type==='retiro').reduce((s,h)=>s+toAccCurrency(h.amount,h.currency,cur), 0);
   return ingresos - retiros;
 }
 
@@ -2653,8 +2661,9 @@ function renderCuentas() {
   document.getElementById('cuentas-grid').innerHTML = cashCard + p.bankAccounts.map(acc => {
     const saldo = cuentaSaldo(acc);
     const color = saldo >= 0 ? 'var(--green)' : 'var(--red)';
-    const ingresos = (acc.history||[]).filter(h=>h.type==='ingreso').reduce((s,h)=>s+h.amount,0);
-    const retiros  = (acc.history||[]).filter(h=>h.type==='retiro').reduce((s,h)=>s+h.amount,0);
+    const cur = acc.currency;
+    const ingresos = (acc.history||[]).filter(h=>h.type==='ingreso').reduce((s,h)=>s+toAccCurrency(h.amount,h.currency,cur),0);
+    const retiros  = (acc.history||[]).filter(h=>h.type==='retiro').reduce((s,h)=>s+toAccCurrency(h.amount,h.currency,cur),0);
     return `<div class="card">
       <div class="card-stripe" style="background:var(--purple)"></div>
       <div style="margin-top:.3rem">

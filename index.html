@@ -636,7 +636,7 @@ function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   if (id === 'pg-profiles') renderProfileSelector();
-  if (id === 'pg-app') { updateSidebarInfo(); nav('dashboard'); }
+  if (id === 'pg-app') { updateSidebarInfo(); migrateRetiroAhorros(); nav('dashboard'); }
 }
 
 // ===== PROFILE SELECTOR =====
@@ -812,6 +812,15 @@ function thisMonthTxs() {
   return p.transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === m && d.getFullYear() === y; });
 }
 
+// Convierte transacciones legadas de retiro de ahorro (type:'income') al nuevo formato
+function migrateRetiroAhorros() {
+  const p = getP();
+  const legacy = p.transactions.filter(t => t.type === 'income' && t.category === 'Retiro de ahorro' && t.savingId);
+  if (legacy.length === 0) return;
+  legacy.forEach(t => { t.type = 'ahorro'; t.amount = -Math.abs(t.amount); });
+  saveP();
+}
+
 // Calcula el saldo real de una meta desde sus transacciones (siempre sincronizado)
 function getSavingBalance(s, pArg) {
   const p = pArg || getP();
@@ -968,25 +977,28 @@ function renderMovimientos() {
   if (filterType) txs = txs.filter(t => t.type === filterType);
   txs.sort((a, b) => sortDir === 'asc' ? new Date(a.date) - new Date(b.date) : new Date(b.date) - new Date(a.date));
 
-  const typeBadge = { income: 'badge-green', expense: 'badge-red', ahorro: 'badge-purple' };
-  const typeLabel = { income: 'Ingreso', expense: 'Gasto', ahorro: 'Ahorro' };
-  const typeColor = { income: 'var(--green)', expense: 'var(--red)', ahorro: 'var(--purple)' };
-  const typeSign  = { income: '+', expense: '−', ahorro: '→' };
-
   document.getElementById('mv-body').innerHTML = txs.length === 0
     ? '<tr><td colspan="7" style="text-align:center;color:var(--ts);padding:2rem">Sin movimientos. Presiona + para agregar.</td></tr>'
-    : txs.map(t => `
+    : txs.map(t => {
+      const isRetiroAhorro = t.type === 'ahorro' && t.amount < 0;
+      const badge   = isRetiroAhorro ? 'badge-red'    : { income: 'badge-green', expense: 'badge-red', ahorro: 'badge-purple' }[t.type] || 'badge-gray';
+      const label   = isRetiroAhorro ? '↩ Ret. ahorro': { income: 'Ingreso', expense: 'Gasto', ahorro: 'Ahorro' }[t.type] || t.type;
+      const color   = isRetiroAhorro ? 'var(--red)'   : { income: 'var(--green)', expense: 'var(--red)', ahorro: 'var(--purple)' }[t.type] || 'var(--ts)';
+      const sign    = isRetiroAhorro ? '−'            : { income: '+', expense: '−', ahorro: '→' }[t.type] || '';
+      const cat     = t.category || '—';
+      return `
       <tr>
         <td style="color:var(--ts)">${dateStr(t.date)}</td>
         <td>${t.description || '—'}</td>
-        <td><span class="badge badge-gray">${t.category}</span></td>
-        <td><span class="badge ${typeBadge[t.type]||'badge-gray'}">${typeLabel[t.type]||t.type}</span></td>
-        <td style="font-weight:500;color:${typeColor[t.type]||'var(--ts)'}">${typeSign[t.type]||''}${fmt(t.amount, t.currency)}</td>
+        <td><span class="badge badge-gray">${cat}</span></td>
+        <td><span class="badge ${badge}">${label}</span></td>
+        <td style="font-weight:500;color:${color}">${sign}${fmt(Math.abs(t.amount), t.currency)}</td>
         <td>
           <button onclick="editMovimiento('${t.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.8rem;margin-right:.3rem">✏️</button>
           <button onclick="deleteMovimiento('${t.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.8rem">✕</button>
         </td>
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 }
 
 function editMovimiento(id) {
@@ -1601,10 +1613,13 @@ function retirarAhorro(id) {
       const currentBalance = getSavingBalance(s);
       if (amountCOP > currentBalance) return alert('No hay suficiente saldo en esta meta');
       const note = document.getElementById('ret-note').value.trim();
+      // Eliminar transacciones legadas de retiro (tipo income) para esta meta
+      p.transactions = p.transactions.filter(t => !(t.savingId === id && t.type === 'income' && t.category === 'Retiro de ahorro'));
       // Transacción negativa de ahorro — descuenta del saldo y del "ahorros del mes"
       p.transactions.push({
         id: Date.now().toString(), type: 'ahorro',
         amount: -rawAmount, currency, savingId: id,
+        category: 'Retiro de ahorro',
         date: new Date().toISOString().split('T')[0],
         description: note || `Retiro de ${s.name}`
       });

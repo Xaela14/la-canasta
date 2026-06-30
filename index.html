@@ -627,7 +627,8 @@ function defaultProfile(name, emoji, incomeCurrency, expenseCurrency, rate, pin)
     travelBudgets: [],
     investments: [],
     paidRemindersThisMonth: [],
-    bankAccounts: []
+    bankAccounts: [],
+    cash: { history: [] }
   };
 }
 
@@ -986,10 +987,15 @@ function renderMovimientos() {
       const color   = isRetiroAhorro ? 'var(--red)'   : { income: 'var(--green)', expense: 'var(--red)', ahorro: 'var(--purple)' }[t.type] || 'var(--ts)';
       const sign    = isRetiroAhorro ? '−'            : { income: '+', expense: '−', ahorro: '→' }[t.type] || '';
       const cat     = t.category || '—';
+      const pmVal = t.paymentMethod || '';
+      const pmLabel = pmVal === 'efectivo' ? '💵 Efectivo'
+        : pmVal.startsWith('cuenta_') ? `🏦 ${p.bankAccounts.find(a=>a.id===pmVal.replace('cuenta_',''))?.name||'Cuenta'}`
+        : pmVal.startsWith('deuda_')  ? `💳 ${p.debts.find(d=>d.id===pmVal.replace('deuda_',''))?.name||'Tarjeta'}`
+        : '';
       return `
       <tr>
         <td style="color:var(--ts)">${dateStr(t.date)}</td>
-        <td>${t.description || '—'}</td>
+        <td>${t.description || '—'}${pmLabel ? `<div style="font-size:.7rem;color:var(--ts);margin-top:.15rem">${pmLabel}</div>` : ''}</td>
         <td><span class="badge badge-gray">${cat}</span></td>
         <td><span class="badge ${badge}">${label}</span></td>
         <td style="font-weight:500;color:${color}">${sign}${fmt(Math.abs(t.amount), t.currency)}</td>
@@ -1083,6 +1089,15 @@ function openAddMovimiento() {
     <div class="form-group"><label>Descripción (opcional)</label>
       <input type="text" id="mv-desc" placeholder="ej: Mercado semanal">
     </div>
+    <div class="form-group" id="mv-payment-box" style="display:none">
+      <label style="font-size:.82rem;font-weight:500;color:var(--tp)">Método de pago</label>
+      <select id="mv-payment">
+        <option value="">No especificado</option>
+        <option value="efectivo">💵 Efectivo</option>
+        ${p.bankAccounts.map(a=>`<option value="cuenta_${a.id}">🏦 ${a.name}</option>`).join('')}
+        ${p.debts.filter(d=>d.isCredit).map(d=>`<option value="deuda_${d.id}">💳 ${d.name}</option>`).join('')}
+      </select>
+    </div>
     <div id="mv-installment-box">
       <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;font-size:.85rem;color:var(--ts)">
         <input type="checkbox" id="mv-is-installment" onchange="toggleInstallment()">
@@ -1112,6 +1127,7 @@ function updateMvCategories() {
   document.getElementById('mv-cat-box').style.display = isAhorro ? 'none' : 'block';
   document.getElementById('mv-saving-box').style.display = isAhorro ? 'block' : 'none';
   document.getElementById('mv-installment-box').style.display = isExpense ? 'block' : 'none';
+  document.getElementById('mv-payment-box').style.display = isExpense ? 'block' : 'none';
   // Set currency default
   const cur = document.getElementById('mv-currency');
   if (isAhorro) cur.value = p.settings.incomeCurrency;
@@ -1176,15 +1192,57 @@ function saveMovimiento() {
       });
     }
   } else {
-    p.transactions.push({ id: Date.now().toString(), type, amount, currency, category, date, description });
+    const pm = (type === 'expense') ? (document.getElementById('mv-payment')?.value || '') : '';
+    const txId = Date.now().toString();
+    p.transactions.push({ id: txId, type, amount, currency, category, date, description, ...(pm ? { paymentMethod: pm } : {}) });
+    if (pm) {
+      const ts2 = Date.now().toString();
+      if (pm === 'efectivo') {
+        if (!p.cash) p.cash = { history: [] };
+        p.cash.history.push({ id: 'ef_' + ts2, type: 'gasto', amount, currency, date, description: description || category, txId });
+      } else if (pm.startsWith('cuenta_')) {
+        const accId = pm.replace('cuenta_', '');
+        const acc = p.bankAccounts.find(x => x.id === accId);
+        if (acc) {
+          if (!acc.history) acc.history = [];
+          acc.history.push({ id: 'h_' + ts2, type: 'retiro', amount, currency, date, description: description || category, txId, isExpenseLink: true });
+        }
+      } else if (pm.startsWith('deuda_')) {
+        const debtId = pm.replace('deuda_', '');
+        const debt = p.debts.find(d => d.id === debtId);
+        if (debt) {
+          const amtCOP = toExpenseCurrency(amount, currency);
+          debt.balance = (debt.balance || 0) + amtCOP;
+          if (debt.isCredit && debt.totalDebt !== undefined) debt.totalDebt = (debt.totalDebt||0) + amtCOP;
+        }
+      }
+    }
   }
-  saveP(); closeModal(); renderMovimientos();
+  saveP(); closeModal(); renderMovimientos(); renderCuentas();
 }
 
 function deleteMovimiento(id) {
   if (!confirm('¿Eliminar este movimiento?')) return;
-  getP().transactions = getP().transactions.filter(t => t.id !== id);
-  saveP(); renderMovimientos();
+  const p = getP();
+  const tx = p.transactions.find(t => t.id === id);
+  if (tx?.paymentMethod) {
+    const pm = tx.paymentMethod;
+    const amtCOP = toExpenseCurrency(tx.amount, tx.currency);
+    if (pm === 'efectivo') {
+      if (p.cash) p.cash.history = (p.cash.history||[]).filter(h => h.txId !== id);
+    } else if (pm.startsWith('cuenta_')) {
+      const acc = p.bankAccounts.find(x => x.id === pm.replace('cuenta_',''));
+      if (acc) acc.history = (acc.history||[]).filter(h => h.txId !== id);
+    } else if (pm.startsWith('deuda_')) {
+      const debt = p.debts.find(d => d.id === pm.replace('deuda_',''));
+      if (debt) {
+        debt.balance = Math.max(0, (debt.balance||0) - amtCOP);
+        if (debt.isCredit && debt.totalDebt !== undefined) debt.totalDebt = Math.max(0, (debt.totalDebt||0) - amtCOP);
+      }
+    }
+  }
+  p.transactions = p.transactions.filter(t => t.id !== id);
+  saveP(); renderMovimientos(); renderCuentas();
 }
 
 // ===== DEUDAS =====
@@ -2090,11 +2148,167 @@ function cuentaSaldo(acc) {
   return ingresos - retiros;
 }
 
+function getCashBalance() {
+  const p = getP();
+  return Math.max(0, (p.cash?.history || []).reduce((s, h) => {
+    const cop = toExpenseCurrency(h.amount, h.currency);
+    return h.type === 'ingreso' ? s + cop : s - cop;
+  }, 0));
+}
+
+function setEfSource(src, btn) {
+  document.querySelectorAll('#ef-src-regalo,#ef-src-banco,#ef-src-avance').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('ef-banco-box').style.display  = src === 'banco'  ? 'block' : 'none';
+  document.getElementById('ef-avance-box').style.display = src === 'avance' ? 'block' : 'none';
+}
+
+function openAddEfectivo() {
+  const p = getP();
+  openModal('💵 Agregar efectivo', `
+    <div class="form-row">
+      <div class="form-group"><label>Monto</label><input type="number" id="ef-amount" placeholder="0"></div>
+      <div class="form-group"><label>Moneda</label><select id="ef-currency">${currencyOptions(p.settings.expenseCurrency)}</select></div>
+    </div>
+    <div class="form-group"><label>Fecha</label><input type="date" id="ef-date" value="${new Date().toISOString().split('T')[0]}"></div>
+    <div class="form-group"><label>Descripción (opcional)</label><input type="text" id="ef-desc" placeholder="ej: Me pagaron"></div>
+    <div class="form-group" style="margin-top:.8rem">
+      <label style="font-size:.82rem;font-weight:500;color:var(--tp);margin-bottom:.5rem;display:block">¿De dónde viene este efectivo?</label>
+      <div class="toggle-group">
+        <button class="toggle-btn active" id="ef-src-regalo" onclick="setEfSource('regalo',this)">🎁 Me lo dieron</button>
+        <button class="toggle-btn" id="ef-src-banco" onclick="setEfSource('banco',this)">🏦 Retiro banco</button>
+        <button class="toggle-btn" id="ef-src-avance" onclick="setEfSource('avance',this)">💳 Avance tarjeta</button>
+      </div>
+    </div>
+    <div id="ef-banco-box" style="display:none;margin-top:.6rem">
+      ${p.bankAccounts.length > 0
+        ? `<div class="form-group"><label>Cuenta</label><select id="ef-bank-id">${p.bankAccounts.map(a=>`<option value="${a.id}">${a.name}</option>`).join('')}</select></div>`
+        : `<div style="font-size:.8rem;color:var(--amber);padding:.4rem">No tienes cuentas registradas.</div>`}
+    </div>
+    <div id="ef-avance-box" style="display:none;margin-top:.6rem">
+      ${p.debts.length > 0
+        ? `<div class="form-group"><label>Tarjeta / Deuda</label><select id="ef-debt-id">${p.debts.map(d=>`<option value="${d.id}">${d.name}</option>`).join('')}</select></div>`
+        : `<div style="font-size:.8rem;color:var(--amber);padding:.4rem">No tienes deudas/tarjetas registradas.</div>`}
+    </div>
+  `, [
+    { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
+    { label: 'Agregar', cls: 'btn-primary', action: () => {
+      const amount = parseFloat(document.getElementById('ef-amount').value);
+      if (!amount || amount <= 0) return alert('Ingresa un monto válido');
+      const currency = document.getElementById('ef-currency').value;
+      const date = document.getElementById('ef-date').value;
+      const desc = document.getElementById('ef-desc').value.trim();
+      const src = document.querySelector('#ef-src-regalo.active,#ef-src-banco.active,#ef-src-avance.active')?.id?.replace('ef-src-','') || 'regalo';
+      const p = getP();
+      if (!p.cash) p.cash = { history: [] };
+      const ts = Date.now().toString();
+
+      if (src === 'banco') {
+        const bankId = document.getElementById('ef-bank-id')?.value;
+        const acc = p.bankAccounts.find(x => x.id === bankId);
+        if (!acc) return alert('Selecciona una cuenta');
+        if (!acc.history) acc.history = [];
+        const bankHistId = 'h_' + ts; const cashHistId = 'ef_' + ts;
+        acc.history.push({ id: bankHistId, type: 'retiro', amount, currency, date, description: desc || 'Retiro a efectivo', isEfectivoLink: true, cashHistId });
+        p.cash.history.push({ id: cashHistId, type: 'ingreso', source: 'banco', amount, currency, date, description: desc || `Retiro de ${acc.name}`, bankAccountId: bankId, bankHistId });
+
+      } else if (src === 'avance') {
+        const debtId = document.getElementById('ef-debt-id')?.value;
+        const debt = p.debts.find(d => d.id === debtId);
+        if (!debt) return alert('Selecciona una tarjeta');
+        const amtCOP = toExpenseCurrency(amount, currency);
+        debt.balance = (debt.balance || 0) + amtCOP;
+        if (debt.isCredit && debt.totalDebt !== undefined) debt.totalDebt = (debt.totalDebt||0) + amtCOP;
+        p.cash.history.push({ id: 'ef_' + ts, type: 'ingreso', source: 'avance', amount, currency, date, description: desc || `Avance ${debt.name}`, debtId });
+
+      } else {
+        const txId = 'tx_' + ts;
+        p.transactions.push({ id: txId, type: 'income', amount, currency, category: 'Otros ingresos', date, description: desc || 'Efectivo recibido' });
+        p.cash.history.push({ id: 'ef_' + ts, type: 'ingreso', source: 'regalo', amount, currency, date, description: desc || 'Efectivo recibido', txId });
+      }
+      saveP(); closeModal(); renderCuentas();
+    }}
+  ]);
+}
+
+function verHistorialEfectivo() {
+  const p = getP();
+  const history = [...(p.cash?.history || [])].sort((a, b) => new Date(b.date) - new Date(a.date));
+  const balance = getCashBalance();
+  const srcLabel = { banco: '🏦 Retiro banco', avance: '💳 Avance tarjeta', regalo: '🎁 Recibido' };
+  openModal('💵 Historial de efectivo', `
+    <div style="display:flex;gap:1.5rem;font-size:.82rem;color:var(--ts);margin-bottom:.8rem">
+      <span>Saldo: <strong style="color:var(--green)">${fmt(balance)}</strong></span>
+      <span>Movimientos: <strong>${history.length}</strong></span>
+    </div>
+    ${history.length === 0 ? '<div style="text-align:center;color:var(--ts);padding:1.5rem">Sin movimientos aún</div>' :
+    `<div style="max-height:360px;overflow-y:auto">
+      <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Monto</th><th></th></tr></thead><tbody>
+        ${history.map(h => {
+          const isGasto = h.type === 'gasto';
+          const color = isGasto ? 'var(--red)' : 'var(--green)';
+          const label = isGasto ? '💸 Gasto' : (srcLabel[h.source] || '⬆ Ingreso');
+          return `<tr>
+            <td style="color:var(--ts)">${dateStr(h.date)}</td>
+            <td>${h.description || '—'}</td>
+            <td style="color:${color};font-size:.78rem">${label}</td>
+            <td style="font-weight:500;color:${color}">${isGasto ? '−' : '+'}${fmt(h.amount, h.currency)}</td>
+            <td><button onclick="deleteEfectivoMovimiento('${h.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.82rem">✕</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody></table>
+    </div>`}
+  `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
+}
+
+function deleteEfectivoMovimiento(hId) {
+  if (!confirm('¿Eliminar este movimiento de efectivo? Los efectos se revertirán.')) return;
+  const p = getP();
+  if (!p.cash) return;
+  const h = p.cash.history.find(x => x.id === hId);
+  if (!h) return;
+  if (h.type === 'ingreso') {
+    if (h.source === 'banco' && h.bankHistId) {
+      const acc = p.bankAccounts.find(x => x.id === h.bankAccountId);
+      if (acc) acc.history = (acc.history||[]).filter(x => x.id !== h.bankHistId);
+    } else if (h.source === 'avance' && h.debtId) {
+      const debt = p.debts.find(d => d.id === h.debtId);
+      if (debt) {
+        const amtCOP = toExpenseCurrency(h.amount, h.currency);
+        debt.balance = Math.max(0, (debt.balance||0) - amtCOP);
+        if (debt.isCredit && debt.totalDebt !== undefined) debt.totalDebt = Math.max(0, (debt.totalDebt||0) - amtCOP);
+      }
+    } else if (h.source === 'regalo' && h.txId) {
+      p.transactions = p.transactions.filter(t => t.id !== h.txId);
+    }
+  } else if (h.type === 'gasto' && h.txId) {
+    p.transactions = p.transactions.filter(t => t.id !== h.txId);
+  }
+  p.cash.history = p.cash.history.filter(x => x.id !== hId);
+  saveP(); closeModal(); renderCuentas();
+}
+
 function renderCuentas() {
   const p = getP();
   if (!p.bankAccounts) p.bankAccounts = [];
   const typeLabel = { corriente:'Cuenta corriente', ahorros:'Cuenta de ahorros', virtual:'Billetera virtual', inversion:'Cuenta inversión', otro:'Otro' };
-  document.getElementById('cuentas-grid').innerHTML = p.bankAccounts.map(acc => {
+  if (!p.cash) p.cash = { history: [] };
+  const cashBal = getCashBalance();
+  const cashCard = `<div class="card" style="border-color:var(--green)">
+    <div class="card-stripe" style="background:var(--green)"></div>
+    <div style="margin-top:.3rem">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.3rem">
+        <div style="font-weight:500;color:var(--tp)">💵 Efectivo</div>
+        <span style="font-size:.72rem;color:var(--ts);background:var(--green-bg);padding:.15rem .4rem;border-radius:99px">Billetera física</span>
+      </div>
+      <div style="font-size:1.3rem;font-weight:500;color:var(--green);margin:.3rem 0">${fmt(cashBal)}</div>
+      <div style="display:flex;gap:.5rem;margin-top:.7rem">
+        <button onclick="openAddEfectivo()" style="flex:1;padding:.45rem;background:var(--green-bg);color:var(--green);border:1px solid var(--green);border-radius:var(--rs);cursor:pointer;font-size:.8rem;font-weight:500">+ Agregar</button>
+        <button onclick="verHistorialEfectivo()" style="flex:1;padding:.45rem;background:none;color:var(--ts);border:1px solid var(--bl);border-radius:var(--rs);cursor:pointer;font-size:.75rem">📋 Historial</button>
+      </div>
+    </div>
+  </div>`;
+  document.getElementById('cuentas-grid').innerHTML = cashCard + p.bankAccounts.map(acc => {
     const saldo = cuentaSaldo(acc);
     const color = saldo >= 0 ? 'var(--green)' : 'var(--red)';
     const ingresos = (acc.history||[]).filter(h=>h.type==='ingreso').reduce((s,h)=>s+h.amount,0);
@@ -2417,16 +2631,25 @@ function verHistorialCuenta(id) {
     ${history.length === 0 ? '<div style="text-align:center;color:var(--ts);padding:1rem">Sin movimientos aún</div>' :
     `<div style="max-height:360px;overflow-y:auto">
       <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Monto</th><th></th></tr></thead><tbody>
-        ${history.map(h => `<tr>
-          <td style="color:var(--ts)">${dateStr(h.date)}</td>
-          <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.description || '—'}</td>
-          <td style="color:${h.type==='ingreso'?'var(--green)':'var(--red)'}">${h.type==='ingreso'?'⬆':'⬇'} ${h.type}</td>
-          <td style="font-weight:500;color:${h.type==='ingreso'?'var(--green)':'var(--red)'}">${h.type==='ingreso'?'+':'−'}${fmt(h.amount, h.currency||acc.currency)}</td>
-          <td style="white-space:nowrap">
-            <button onclick="editCuentaMovimiento('${acc.id}','${h.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.82rem;padding:.1rem .3rem" title="Editar">✏️</button>
-            <button onclick="deleteCuentaMovimiento('${acc.id}','${h.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.85rem;padding:.1rem .3rem" title="Eliminar">✕</button>
-          </td>
-        </tr>`).join('')}
+        ${history.map(h => {
+          const isIn = h.type === 'ingreso';
+          const color = isIn ? 'var(--green)' : 'var(--red)';
+          const typeLabel = isIn ? '⬆ Ingreso'
+            : h.isEfectivoLink ? '💵 A efectivo'
+            : h.isExpenseLink  ? '💸 Gasto'
+            : '⬇ Retiro';
+          const canEdit = !h.isExpenseLink && !h.isEfectivoLink;
+          return `<tr>
+            <td style="color:var(--ts)">${dateStr(h.date)}</td>
+            <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${h.description || '—'}</td>
+            <td style="color:${color};font-size:.78rem">${typeLabel}</td>
+            <td style="font-weight:500;color:${color}">${isIn?'+':'−'}${fmt(h.amount, h.currency||acc.currency)}</td>
+            <td style="white-space:nowrap">
+              ${canEdit ? `<button onclick="editCuentaMovimiento('${acc.id}','${h.id}')" style="background:none;border:none;color:var(--ts);cursor:pointer;font-size:.82rem;padding:.1rem .3rem" title="Editar">✏️</button>` : ''}
+              <button onclick="deleteCuentaMovimiento('${acc.id}','${h.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:.85rem;padding:.1rem .3rem" title="Eliminar">✕</button>
+            </td>
+          </tr>`;
+        }).join('')}
       </tbody></table>
     </div>`}
   `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
@@ -2673,12 +2896,16 @@ function deleteCuentaMovimiento(accId, histId) {
   }
 
   if (h.type === 'retiro') {
+    // Retiro a efectivo (isEfectivoLink): revertir la entrada de efectivo vinculada
+    if (h.isEfectivoLink && h.cashHistId) {
+      if (p.cash) p.cash.history = (p.cash.history||[]).filter(x => x.id !== h.cashHistId);
+    }
+    // Retiro auto-creado por gasto (isExpenseLink): la tx en movimientos se elimina abajo
     if (h.debtId) {
       const debt = p.debts.find(d => d.id === h.debtId);
       if (debt) {
         debt.balance = (debt.balance || 0) + amountCOP;
         if (debt.isCredit && debt.totalDebt !== undefined) debt.totalDebt = (debt.totalDebt || 0) + amountCOP;
-        // Quitar el mes de paidMonths si aplica
         if (h.debtMonthKey && debt.paidMonths) debt.paidMonths = debt.paidMonths.filter(m => m !== h.debtMonthKey);
       }
     }

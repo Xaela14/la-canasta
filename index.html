@@ -812,6 +812,14 @@ function thisMonthTxs() {
   return p.transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === m && d.getFullYear() === y; });
 }
 
+// Calcula el saldo real de una meta desde sus transacciones (siempre sincronizado)
+function getSavingBalance(s, pArg) {
+  const p = pArg || getP();
+  const txs = p.transactions.filter(t => t.savingId === s.id && t.type === 'ahorro');
+  if (txs.length === 0) return s.currentCOP || 0; // compatibilidad con datos anteriores
+  return Math.max(0, txs.reduce((sum, t) => sum + toExpenseCurrency(t.amount, t.currency), 0));
+}
+
 // ===== DASHBOARD =====
 function setMonth(offset, btn) {
   document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
@@ -832,7 +840,7 @@ function renderDashboard() {
   const totalIncomeIncome = txs.filter(t => t.type === 'income').reduce((s, t) => s + toExpenseCurrency(t.amount, t.currency), 0);
   const totalExpense = txs.filter(t => t.type === 'expense').reduce((s, t) => s + toExpenseCurrency(t.amount, t.currency), 0);
   const totalAhorros = txs.filter(t => t.type === 'ahorro').reduce((s, t) => s + toExpenseCurrency(t.amount, t.currency), 0);
-  const totalSavingsCOP = p.savings.reduce((s, sv) => s + (sv.currentCOP || 0), 0);
+  const totalSavingsCOP = p.savings.reduce((s, sv) => s + getSavingBalance(sv, p), 0);
   const totalDebt = p.debts.reduce((s, d) => s + (d.balance || d.totalDebt || 0), 0);
   const netWorth = totalSavingsCOP - totalDebt;
   const available = totalIncomeIncome - totalExpense - totalAhorros;
@@ -879,11 +887,12 @@ function renderDashboard() {
       <div style="font-size:.88rem;font-weight:500;color:var(--tp);margin-bottom:.8rem">🐾 Metas de ahorro</div>
       ${p.savings.map(s => {
         const goalCOP = s.goalUSD * r;
-        const pct = goalCOP > 0 ? Math.min(100, (s.currentCOP / goalCOP) * 100) : 0;
+        const balance = getSavingBalance(s, p);
+        const pct = goalCOP > 0 ? Math.min(100, (balance / goalCOP) * 100) : 0;
         const color = pct >= 100 ? '#2d7a3a' : pct >= 50 ? '#b7720a' : '#7b5ea7';
         return `<div style="margin-bottom:.9rem">
           <div style="display:flex;justify-content:space-between;font-size:.82rem;color:var(--ts);margin-bottom:.3rem">
-            <span>${s.emoji || '🐷'} ${s.name}</span><span style="color:${color};font-weight:500">${fmt(s.currentCOP, ec)} / ${fmtUSD(s.goalUSD)}</span>
+            <span>${s.emoji || '🐷'} ${s.name}</span><span style="color:${color};font-weight:500">${fmt(balance, ec)} / ${fmtUSD(s.goalUSD)}</span>
           </div>
           <div class="progress"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
         </div>`;
@@ -1448,7 +1457,8 @@ function renderAhorros() {
   const r = p.settings.exchangeRate;
   document.getElementById('ahorros-grid').innerHTML = p.savings.map(s => {
     const goalCOP = s.goalUSD * r;
-    const pct = goalCOP > 0 ? Math.min(100, (s.currentCOP / goalCOP) * 100) : 0;
+    const balance = getSavingBalance(s, p);
+    const pct = goalCOP > 0 ? Math.min(100, (balance / goalCOP) * 100) : 0;
     const color = pct >= 100 ? 'var(--green)' : pct >= 60 ? 'var(--amber)' : 'var(--purple)';
     return `<div class="card">
       <div class="card-stripe"></div>
@@ -1457,7 +1467,7 @@ function renderAhorros() {
           <div style="font-weight:500;color:var(--tp)">${s.emoji || '🐷'} ${s.name}</div>
           <button onclick="editAhorro('${s.id}')" style="background:none;border:1px solid var(--bl);border-radius:var(--rs);padding:.25rem .5rem;font-size:.72rem;cursor:pointer;color:var(--ts)">Editar</button>
         </div>
-        <div style="font-size:1.3rem;font-weight:500;color:${color}">${fmt(s.currentCOP)}</div>
+        <div style="font-size:1.3rem;font-weight:500;color:${color}">${fmt(balance)}</div>
         <div style="font-size:.78rem;color:var(--ts);margin-top:.2rem">Meta: ${fmtUSD(s.goalUSD)} · ${fmt(goalCOP)}</div>
         <div class="progress" style="margin-top:.7rem"><div class="progress-fill" style="width:${pct}%;background:${color}"></div></div>
         <div style="font-size:.72rem;color:var(--ts);margin-top:.3rem">${pct.toFixed(1)}% completado · Aporte mensual: ${fmtUSD(s.monthlyUSD)}</div>
@@ -1544,7 +1554,7 @@ function editAhorro(id) {
       <div class="form-group"><label>Meta (USD)</label><input type="number" id="ea-goal" value="${s.goalUSD}"></div>
       <div class="form-group"><label>Aporte mensual (USD)</label><input type="number" id="ea-monthly" value="${s.monthlyUSD}"></div>
     </div>
-    <div class="form-group"><label>Saldo actual (${p.settings.expenseCurrency})</label><input type="number" id="ea-current" value="${s.currentCOP}"></div>
+    <div class="form-group"><label>Saldo actual</label><div style="font-size:.95rem;font-weight:500;color:var(--purple);padding:.4rem 0">${fmt(getSavingBalance(s, p))}</div><div style="font-size:.74rem;color:var(--ts)">El saldo se calcula automáticamente desde tus depósitos y retiros.</div></div>
     <button onclick="deleteAhorro('${id}')" style="background:none;border:none;color:var(--red);font-size:.82rem;cursor:pointer;margin-top:.5rem">🗑 Eliminar meta</button>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
@@ -1553,7 +1563,6 @@ function editAhorro(id) {
       s.emoji = document.querySelector('#ea-emoji-picker .emoji-opt.selected')?.textContent || s.emoji || '🐷';
       s.goalUSD = parseFloat(document.getElementById('ea-goal').value) || s.goalUSD;
       s.monthlyUSD = parseFloat(document.getElementById('ea-monthly').value) || s.monthlyUSD;
-      const eaV = document.getElementById('ea-current').value; s.currentCOP = eaV !== '' ? (parseFloat(eaV) || 0) : s.currentCOP;
       saveP(); closeModal(); renderAhorros();
     }}
   ]);
@@ -1570,10 +1579,10 @@ function retirarAhorro(id) {
   if (!s) return;
   openModal(`↩ Retirar de ${s.name}`, `
     <div style="background:var(--amber-bg);border-radius:var(--rs);padding:.6rem .8rem;margin-bottom:.8rem;font-size:.8rem;color:var(--amber)">
-      Saldo actual: <strong>${fmt(s.currentCOP)}</strong>. El monto retirado se suma al disponible como ingreso.
+      Saldo actual: <strong>${fmt(getSavingBalance(s))}</strong>. El monto retirado vuelve a tu disponible.
     </div>
     <div class="form-row">
-      <div class="form-group"><label>Monto a retirar</label><input type="number" id="ret-amount" placeholder="0" min="0" max="${s.currentCOP}"></div>
+      <div class="form-group"><label>Monto a retirar</label><input type="number" id="ret-amount" placeholder="0" min="0"></div>
       <div class="form-group"><label>Moneda</label>
         <select id="ret-currency">
           <option value="${p.settings.expenseCurrency}">${p.settings.expenseCurrency}</option>
@@ -1589,13 +1598,13 @@ function retirarAhorro(id) {
       if (!rawAmount || rawAmount <= 0) return alert('Ingresa un monto válido');
       const currency = document.getElementById('ret-currency').value;
       const amountCOP = toExpenseCurrency(rawAmount, currency);
-      if (amountCOP > s.currentCOP) return alert('No hay suficiente saldo en esta meta');
-      s.currentCOP = Math.max(0, s.currentCOP - amountCOP);
+      const currentBalance = getSavingBalance(s);
+      if (amountCOP > currentBalance) return alert('No hay suficiente saldo en esta meta');
       const note = document.getElementById('ret-note').value.trim();
+      // Transacción negativa de ahorro — descuenta del saldo y del "ahorros del mes"
       p.transactions.push({
-        id: Date.now().toString(), type: 'income',
-        amount: rawAmount, currency,
-        category: 'Retiro de ahorro', savingId: id,
+        id: Date.now().toString(), type: 'ahorro',
+        amount: -rawAmount, currency, savingId: id,
         date: new Date().toISOString().split('T')[0],
         description: note || `Retiro de ${s.name}`
       });
@@ -1609,20 +1618,26 @@ function verHistorialAhorro(id) {
   const p = getP();
   const s = p.savings.find(x => x.id === id);
   if (!s) return;
-  const txs = p.transactions.filter(t => t.savingId === id).sort((a, b) => new Date(b.date) - new Date(a.date));
-  const typeLabel = { ahorro: '⬆ Depósito', income: '⬇ Retiro' };
-  const typeColor = { ahorro: 'var(--green)', income: 'var(--amber)' };
+  const txs = p.transactions.filter(t => t.savingId === id && t.type === 'ahorro').sort((a, b) => new Date(b.date) - new Date(a.date));
+  const balance = getSavingBalance(s, p);
   openModal(`📋 Historial — ${s.name}`, `
-    <div style="font-size:.82rem;color:var(--ts);margin-bottom:.8rem">Total movimientos: ${txs.length}</div>
+    <div style="display:flex;gap:1.5rem;font-size:.82rem;color:var(--ts);margin-bottom:.8rem">
+      <span>Saldo actual: <strong style="color:var(--purple)">${fmt(balance)}</strong></span>
+      <span>Movimientos: <strong>${txs.length}</strong></span>
+    </div>
     ${txs.length === 0 ? '<div style="text-align:center;color:var(--ts);padding:1rem">Sin movimientos aún</div>' :
     `<div style="max-height:360px;overflow-y:auto">
-      <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Tipo</th><th>Monto</th></tr></thead><tbody>
-        ${txs.map(t => `<tr>
-          <td style="color:var(--ts)">${dateStr(t.date)}</td>
-          <td>${t.description || '—'}</td>
-          <td style="color:${typeColor[t.type]||'var(--ts)'}">${typeLabel[t.type]||t.type}</td>
-          <td style="font-weight:500;color:${typeColor[t.type]||'var(--ts)'}">${fmt(t.amount, t.currency)}</td>
-        </tr>`).join('')}
+      <table class="data-table"><thead><tr><th>Fecha</th><th>Descripción</th><th>Monto</th></tr></thead><tbody>
+        ${txs.map(t => {
+          const isRetiro = t.amount < 0;
+          const color = isRetiro ? 'var(--red)' : 'var(--green)';
+          const label = isRetiro ? '⬇ Retiro' : '⬆ Depósito';
+          return `<tr>
+            <td style="color:var(--ts)">${dateStr(t.date)}</td>
+            <td>${t.description || label}</td>
+            <td style="font-weight:500;color:${color}">${isRetiro ? '−' : '+'}${fmt(Math.abs(t.amount), t.currency)}</td>
+          </tr>`;
+        }).join('')}
       </tbody></table>
     </div>`}
   `, [{ label: 'Cerrar', cls: 'btn-secondary', action: closeModal }]);
@@ -1778,7 +1793,7 @@ function renderViajes() {
   const r = p.settings.exchangeRate;
   document.getElementById('viajes-grid').innerHTML = (p.travelBudgets || []).map(v => {
     const saving = p.savings.find(s => s.id === v.savingId);
-    const currentCOP = saving ? (saving.currentCOP || 0) : 0;
+    const currentCOP = saving ? getSavingBalance(saving, p) : 0;
     const goalCOP = saving ? (saving.goalUSD || 0) * r : (v.goalCOP || 0);
     const pct = goalCOP > 0 ? Math.min(100, (currentCOP / goalCOP) * 100) : 0;
     const color = pct >= 100 ? 'var(--green)' : 'var(--purple)';

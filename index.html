@@ -2136,7 +2136,11 @@ function openAddCuenta() {
         currency,
         history: []
       };
-      if (initAmount > 0) acc.history.push({ id: 'h_' + Date.now(), type: 'ingreso', amount: initAmount, date: new Date().toISOString().split('T')[0], description: 'Saldo inicial' });
+      const today = new Date().toISOString().split('T')[0];
+      if (initAmount > 0) {
+        acc.history.push({ id: 'h_' + Date.now(), type: 'ingreso', amount: initAmount, currency, date: today, description: 'Saldo inicial' });
+        p.transactions.push({ id: Date.now().toString() + '_init', type: 'income', amount: initAmount, currency, category: p.settings.incomeCategories[0] || 'Otros ingresos', date: today, description: `Saldo inicial — ${name}`, bankAccountId: acc.id });
+      }
       p.bankAccounts.push(acc);
       saveP(); closeModal(); renderCuentas();
     }}
@@ -2180,9 +2184,17 @@ function deleteCuenta(id) {
   saveP(); renderCuentas();
 }
 
+function setCiMode(mode, btn) {
+  document.querySelectorAll('#ci-mode-disp,#ci-mode-sav').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('ci-cat-box').style.display = mode === 'disponible' ? 'block' : 'none';
+  document.getElementById('ci-sav-box').style.display = mode === 'ahorro' ? 'block' : 'none';
+}
+
 function cuentaIngreso(id) {
   const p = getP();
   const acc = p.bankAccounts.find(x => x.id === id);
+  const hasSavings = p.savings.length > 0;
   openModal(`+ Ingreso — ${acc.name}`, `
     <div class="form-row">
       <div class="form-group"><label>Monto</label><input type="number" id="ci-amount" placeholder="0"></div>
@@ -2190,9 +2202,31 @@ function cuentaIngreso(id) {
     </div>
     <div class="form-group"><label>Fecha</label><input type="date" id="ci-date" value="${new Date().toISOString().split('T')[0]}"></div>
     <div class="form-group"><label>Descripción</label><input type="text" id="ci-desc" placeholder="ej: Nómina junio"></div>
-    <label style="display:flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ts);margin-top:.6rem;cursor:pointer">
-      <input type="checkbox" id="ci-also-mv"> También registrar en Movimientos como ingreso
-    </label>
+    <div class="form-group" style="margin-top:.8rem">
+      <label style="font-size:.82rem;font-weight:500;color:var(--tp);margin-bottom:.5rem;display:block">¿Este dinero está disponible o es para ahorros?</label>
+      <div class="toggle-group">
+        <button class="toggle-btn active" id="ci-mode-disp" onclick="setCiMode('disponible',this)">💰 Disponible</button>
+        <button class="toggle-btn" id="ci-mode-sav" onclick="setCiMode('ahorro',this)">🐷 Solo ahorros</button>
+      </div>
+    </div>
+    <div id="ci-cat-box" style="margin-top:.6rem">
+      <div class="form-group"><label>Categoría de ingreso</label>
+        <select id="ci-category">${p.settings.incomeCategories.map(c=>`<option>${c}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div id="ci-sav-box" style="display:none;margin-top:.6rem">
+      ${hasSavings
+        ? `<div class="form-group"><label>Meta de ahorro</label>
+            <select id="ci-saving-id">${p.savings.map(s=>`<option value="${s.id}">${s.emoji||'🐷'} ${s.name}</option>`).join('')}</select>
+           </div>
+           <div style="font-size:.76rem;color:var(--purple);margin-top:.3rem;background:var(--purple-bg);padding:.5rem .7rem;border-radius:var(--rs)">
+             El monto se sumará a la meta seleccionada y se verá en Movimientos como ahorro.
+           </div>`
+        : `<div style="font-size:.82rem;color:var(--amber);background:var(--amber-bg);padding:.6rem .8rem;border-radius:var(--rs)">
+             No tienes metas de ahorro creadas aún. Crea una primero en la sección Ahorros.
+           </div>`
+      }
+    </div>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Registrar', cls: 'btn-primary', action: () => {
@@ -2201,12 +2235,28 @@ function cuentaIngreso(id) {
       const currency = document.getElementById('ci-currency').value;
       const date = document.getElementById('ci-date').value;
       const desc = document.getElementById('ci-desc').value.trim();
+      const isAhorro = document.getElementById('ci-mode-sav').classList.contains('active');
       if (!acc.history) acc.history = [];
-      acc.history.push({ id: 'h_' + Date.now(), type: 'ingreso', amount, currency, date, description: desc || 'Ingreso' });
-      if (document.getElementById('ci-also-mv').checked) {
-        p.transactions.push({ id: Date.now().toString(), type: 'income', amount, currency, category: p.settings.incomeCategories[0], date, description: desc || `Ingreso ${acc.name}` });
+      if (isAhorro) {
+        const savingIdEl = document.getElementById('ci-saving-id');
+        if (!savingIdEl) return alert('Primero crea una meta de ahorro');
+        const savingId = savingIdEl.value;
+        const saving = p.savings.find(s => s.id === savingId);
+        if (!saving) return alert('Meta de ahorro no encontrada');
+        const amountCOP = toExpenseCurrency(amount, currency);
+        const prev = saving.currentCOP || 0;
+        saving.currentCOP = prev + amountCOP;
+        acc.history.push({ id: 'h_' + Date.now(), type: 'ingreso', amount, currency, date, description: desc || `Ahorro → ${saving.name}`, isAhorro: true, savingId });
+        p.transactions.push({ id: Date.now().toString(), type: 'ahorro', amount, currency, category: saving.name, savingId, date, description: desc || `Aporte ${saving.name} (${acc.name})`, bankAccountId: id });
+        saveP(); closeModal(); renderCuentas();
+        const goalCOP = saving.goalUSD * p.settings.exchangeRate;
+        if (prev < goalCOP && saving.currentCOP >= goalCOP) setTimeout(() => showBear('¡Meta alcanzada!', `${saving.name} completada 🎉`), 200);
+      } else {
+        const category = document.getElementById('ci-category').value;
+        acc.history.push({ id: 'h_' + Date.now(), type: 'ingreso', amount, currency, date, description: desc || 'Ingreso' });
+        p.transactions.push({ id: Date.now().toString(), type: 'income', amount, currency, category, date, description: desc || `Ingreso ${acc.name}`, bankAccountId: id });
+        saveP(); closeModal(); renderCuentas();
       }
-      saveP(); closeModal(); renderCuentas();
     }}
   ]);
 }
@@ -2223,9 +2273,12 @@ function cuentaRetiro(id) {
     </div>
     <div class="form-group"><label>Fecha</label><input type="date" id="cr-date" value="${new Date().toISOString().split('T')[0]}"></div>
     <div class="form-group"><label>Descripción</label><input type="text" id="cr-desc" placeholder="ej: Pago arriendo"></div>
-    <label style="display:flex;align-items:center;gap:.5rem;font-size:.84rem;color:var(--ts);margin-top:.6rem;cursor:pointer">
-      <input type="checkbox" id="cr-also-mv"> También registrar en Movimientos como gasto
-    </label>
+    <div class="form-group"><label>Categoría de gasto</label>
+      <select id="cr-category">${p.settings.expenseCategories.map(c=>`<option>${c}</option>`).join('')}</select>
+    </div>
+    <div style="font-size:.76rem;color:var(--ts);background:var(--bl);padding:.5rem .7rem;border-radius:var(--rs);margin-top:.5rem">
+      Este retiro se registrará automáticamente en Movimientos como gasto.
+    </div>
   `, [
     { label: 'Cancelar', cls: 'btn-secondary', action: closeModal },
     { label: 'Registrar', cls: 'btn-primary', action: () => {
@@ -2234,11 +2287,10 @@ function cuentaRetiro(id) {
       const currency = document.getElementById('cr-currency').value;
       const date = document.getElementById('cr-date').value;
       const desc = document.getElementById('cr-desc').value.trim();
+      const category = document.getElementById('cr-category').value;
       if (!acc.history) acc.history = [];
       acc.history.push({ id: 'h_' + Date.now(), type: 'retiro', amount, currency, date, description: desc || 'Retiro' });
-      if (document.getElementById('cr-also-mv').checked) {
-        p.transactions.push({ id: Date.now().toString(), type: 'expense', amount, currency, category: p.settings.expenseCategories[0], date, description: desc || `Retiro ${acc.name}` });
-      }
+      p.transactions.push({ id: Date.now().toString(), type: 'expense', amount, currency, category, date, description: desc || `Retiro ${acc.name}`, bankAccountId: id });
       saveP(); closeModal(); renderCuentas();
     }}
   ]);
